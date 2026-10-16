@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { Business } from "../models/Business.js";
+import { applyComplianceRules } from "../lib/compliance.js";
 import { buildInsights } from "../lib/insights.js";
 import { ApiError } from "../middleware/errors.js";
 import { requireAuth, requireRole } from "../middleware/security.js";
@@ -28,6 +29,7 @@ export function businessRoutes({ config }) {
     }
     const business = await own(req);
     Object.assign(business, patch);
+    applyComplianceRules(business, patch);
     await business.save();
     res.json({ business, insights: buildInsights(business) });
   });

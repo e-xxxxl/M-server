@@ -22,7 +22,7 @@ export async function audit(actor, action, summary, target = {}) {
   try {
     await AuditLog.create({
       actor: actor._id,
-      actorName: `${actor.fullName} (${actor.role === "super_admin" ? "super admin" : "admin"})`,
+      actorName: `${actor.fullName} (${actor.role === "super_admin" ? "super admin" : actor.role === "partner" ? "partner" : "admin"})`,
       action,
       summary,
       targetType: target.type ?? "",

@@ -2,6 +2,7 @@ import "dotenv/config";
 import mongoose from "mongoose";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
+import { configureMailer } from "./lib/mailer.js";
 
 const config = loadConfig();
 
@@ -25,9 +26,22 @@ try {
 }
 console.log("Connected to MongoDB.");
 
+const mail = configureMailer(config);
+if (!mail.enabled) {
+  console.warn(
+    config.isProd
+      ? "WARNING: email is OFF (RESEND_API_KEY or EMAIL_FROM is not set). Password reset and confirmation emails will not be sent."
+      : "Email is off (no RESEND_API_KEY). Emails are printed here instead of being sent.",
+  );
+}
+
+if (config.session.allowBearer) {
+  console.warn("WARNING: ALLOW_TOKEN_AUTH is on. Session tokens are returned to the page. Use it for testing only.");
+}
+
 const app = createApp(config);
-const server = app.listen(config.port, () => {
-  console.log(`NMREP API listening on port ${config.port} (${config.nodeEnv}). Allowed origins: ${config.corsOrigins.join(", ")}`);
+const server = app.listen(config.port, config.host, () => {
+  console.log(`NMREP API listening on ${config.host}:${config.port} (${config.nodeEnv}). Allowed origins: ${config.corsOrigins.join(", ")}`);
 });
 
 async function shutdown(signal) {

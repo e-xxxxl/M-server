@@ -7,6 +7,7 @@ process.env.MONGOMS_VERSION ??= "6.0.19";
 
 import { createApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
+import { configureMailer } from "../src/lib/mailer.js";
 import { hashPassword } from "../src/lib/crypto.js";
 import { newTemporaryPassword } from "../src/lib/codes.js";
 import { User } from "../src/models/User.js";
@@ -18,6 +19,7 @@ const config = loadConfig({
   BCRYPT_ROUNDS: process.env.BCRYPT_ROUNDS ?? "10",
 });
 
+configureMailer(config); // prints emails to this console unless RESEND_API_KEY is set
 mongoose.set("sanitizeFilter", true);
 mongoose.set("strictQuery", true);
 

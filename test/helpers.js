@@ -21,6 +21,7 @@ export async function startTestServer(overrides = {}) {
     RATE_LIMIT_LOGIN: "1000",
     RATE_LIMIT_REGISTER: "1000",
     RATE_LIMIT_GENERAL: "10000",
+    RATE_LIMIT_RESET: "1000",
     ...overrides,
   });
   const server = createApp(config, { log: false }).listen(0);

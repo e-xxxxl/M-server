@@ -54,3 +54,5 @@ export const fundingNeeds = [
 ];
 
 export const verificationStatuses = ["Unverified", "Pending Verification", "Verified", "Rejected", "Suspended"];
+
+export const yesNo = ["Yes", "No"];

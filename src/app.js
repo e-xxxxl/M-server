@@ -3,8 +3,13 @@ import cors from "cors";
 import express from "express";
 import helmet from "helmet";
 import mongoose from "mongoose";
+import { referenceData } from "./lib/reference.js";
 import { accountRoutes } from "./routes/account.js";
 import { adminRoutes } from "./routes/admin.js";
+import { adminOpportunityRoutes } from "./routes/admin-opportunities.js";
+import { adminOrganisationRoutes } from "./routes/admin-organisations.js";
+import { opportunityRoutes } from "./routes/opportunities.js";
+import { partnerRoutes } from "./routes/partner.js";
 import { authRoutes } from "./routes/auth.js";
 import { businessRoutes } from "./routes/business.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
@@ -28,7 +33,7 @@ export function createApp(config, { log = true } = {}) {
       },
       credentials: true,
       methods: ["GET", "POST", "PATCH", "DELETE"],
-      allowedHeaders: ["Content-Type"],
+      allowedHeaders: ["Content-Type", "Authorization"],
       maxAge: 600,
     }),
   );
@@ -51,6 +56,12 @@ export function createApp(config, { log = true } = {}) {
   app.use(cookieParser());
   app.use("/api", requireAllowedOrigin(config.corsOrigins));
 
+  // Allowed values for every list in the API (sectors, states and so on), so an app never has to hard-code them.
+  app.get("/api/reference", (_req, res) => {
+    res.set("Cache-Control", "public, max-age=3600");
+    res.json(referenceData());
+  });
+
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", database: mongoose.connection.readyState === 1 });
   });
@@ -59,6 +70,14 @@ export function createApp(config, { log = true } = {}) {
   app.use("/api/business", businessRoutes({ config }));
   app.use("/api/dashboard", dashboardRoutes({ config }));
   app.use("/api/admin", adminRoutes({ config }));
+  app.use("/api/admin", adminOpportunityRoutes({ config }));
+  app.use("/api/admin", adminOrganisationRoutes({ config }));
+  app.use("/api/partner", partnerRoutes({ config }));
+  const owner = opportunityRoutes({ config });
+  app.use("/api/opportunities", owner.opportunities);
+  app.use("/api/applications", owner.applications);
+  app.use("/api/notifications", owner.notifications);
+  app.use("/api/consents", owner.consents);
 
   app.use(notFound);
   app.use(errorHandler);

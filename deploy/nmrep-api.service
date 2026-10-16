@@ -1,0 +1,48 @@
+# systemd unit for the NMREP API. Installed as /etc/systemd/system/nmrep-api.service
+# It starts the API at boot, restarts it if it stops, and runs it as an ordinary user with most of the
+# system hidden from it.
+
+[Unit]
+Description=NMREP API
+Documentation=file:///opt/nmrep/current/backend/README.md
+After=network-online.target mongod.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nmrep
+Group=nmrep
+# "current" is a link to the live release, so a deploy or a rollback only moves the link.
+WorkingDirectory=/opt/nmrep/current/backend
+ExecStart=/usr/bin/node src/server.js
+# The settings (database address, email key and so on) are read from /opt/nmrep/shared/.env,
+# which the release folder links to as backend/.env.
+Environment=NODE_ENV=production
+
+# If MongoDB is not ready yet at boot the API exits, and systemd tries again in 5 seconds.
+Restart=always
+RestartSec=5
+# Give a request a moment to finish when the service is stopped.
+TimeoutStopSec=20
+
+# Hardening: the API needs the network and its own folder, and nothing else.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+
+# Logs go to the system journal: journalctl -u nmrep-api
+SyslogIdentifier=nmrep-api
+
+[Install]
+WantedBy=multi-user.target

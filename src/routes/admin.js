@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import { Agent } from "../models/Agent.js";
 import { AuditLog, audit } from "../models/AuditLog.js";
 import { Business } from "../models/Business.js";
+import { notify } from "../models/Notification.js";
 import { Session } from "../models/Session.js";
 import { User } from "../models/User.js";
 import { newReferralCode, newTemporaryPassword } from "../lib/codes.js";
@@ -200,6 +201,12 @@ export function adminRoutes({ config }) {
     await business.save();
 
     await audit(req.user, "business.status", `Set "${business.businessName}" to ${status}`, { type: "business", id });
+    await notify(business.owner, {
+      type: "verification",
+      title: `Your verification status is now: ${status}`,
+      body: note.slice(0, 300),
+      link: "/dashboard/",
+    });
     res.json({ business: business.toJSON() });
   });
 

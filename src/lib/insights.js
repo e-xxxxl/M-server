@@ -9,7 +9,9 @@ const filled = (value) => (typeof value === "number" ? Number.isFinite(value) : 
 
 export function profileProgress(business) {
   const total = profileFieldNames.length;
-  const completed = profileFieldNames.filter((name) => filled(business[name])).length;
+  // Answering "No" to the CAC or TIN question completes that detail, just as entering the number does.
+  const answeredNo = { cacNumber: business.hasCac === "No", tin: business.hasTin === "No" };
+  const completed = profileFieldNames.filter((name) => filled(business[name]) || answeredNo[name] === true).length;
   return { completed, total };
 }
 
@@ -17,7 +19,7 @@ export function nextActions(business) {
   const actions = [];
   const unregistered = business.businessType === "Not yet registered with the CAC";
 
-  if (!filled(business.cacNumber)) {
+  if (business.hasCac !== "No" && !filled(business.cacNumber)) {
     actions.push(
       unregistered
         ? {
@@ -34,7 +36,7 @@ export function nextActions(business) {
           },
     );
   }
-  if (!filled(business.tin)) {
+  if (business.hasTin !== "No" && !filled(business.tin)) {
     actions.push({
       id: "tin",
       title: "Add your Tax Identification Number (TIN)",

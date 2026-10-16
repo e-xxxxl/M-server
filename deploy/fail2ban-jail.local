@@ -1,0 +1,11 @@
+# Installed as /etc/fail2ban/jail.local. Bans an address for an hour after repeated failed SSH logins.
+[DEFAULT]
+bantime  = 1h
+findtime = 10m
+maxretry = 5
+# Never ban yourself: add your own fixed IP address here, separated by spaces, if you have one.
+# ignoreip = 127.0.0.1/8 ::1 YOUR.HOME.IP.ADDRESS
+
+[sshd]
+enabled = true
+backend = systemd

@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-export const roles = ["msme_owner", "admin", "super_admin"];
+export const roles = ["msme_owner", "admin", "super_admin", "partner"];
 
 const userSchema = new mongoose.Schema(
   {
@@ -12,6 +12,8 @@ const userSchema = new mongoose.Schema(
     // Set only by the server: owners register themselves, admins are created by a super admin,
     // and the first super admin by the command-line script. A client can never choose a role.
     role: { type: String, enum: roles, default: "msme_owner" },
+    // Partners belong to one organisation and can only ever see that organisation's data.
+    organisation: { type: mongoose.Schema.Types.ObjectId, ref: "Organisation", default: null },
     // A deactivated account cannot log in and its sessions are removed.
     active: { type: Boolean, default: true },
     // Admins start with a temporary password and must replace it before doing anything else.
@@ -21,12 +23,16 @@ const userSchema = new mongoose.Schema(
     lockUntil: { type: Date, default: null, select: false },
     lastLoginAt: { type: Date, default: null },
     termsAcceptedAt: { type: Date, default: null },
+    // Set when the person opens the link in the confirmation email.
+    emailVerifiedAt: { type: Date, default: null },
   },
   {
     timestamps: true,
     toJSON: {
       transform(_doc, ret) {
         ret.id = String(ret._id);
+        if (ret.organisation) ret.organisation = String(ret.organisation);
+        else delete ret.organisation;
         delete ret._id;
         delete ret.__v;
         delete ret.passwordHash;

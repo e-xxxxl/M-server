@@ -14,7 +14,9 @@ const businessSchema = new mongoose.Schema(
     sector: str(80, true),
     industry: str(120, true),
     yearEstablished: { type: Number, required: true },
+    hasCac: str(3),
     cacNumber: str(30),
+    hasTin: str(3),
     tin: str(30),
     // Location
     state: str(40, true),
@@ -68,6 +70,9 @@ const businessSchema = new mongoose.Schema(
         ret.owner = String(ret.owner);
         // Owners never see who referred them. Admin routes build their own response.
         delete ret.referral;
+        // Profiles saved before the Yes or No questions existed: a number on file means Yes.
+        if (!ret.hasCac && ret.cacNumber) ret.hasCac = "Yes";
+        if (!ret.hasTin && ret.tin) ret.hasTin = "Yes";
         delete ret._id;
         delete ret.__v;
         return ret;

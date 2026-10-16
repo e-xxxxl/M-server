@@ -2,6 +2,16 @@ import { z } from "zod";
 import * as o from "./options.js";
 import { normalizeReferralCode } from "./lib/codes.js";
 
+// Plain wording for the two mistakes a client most often makes: leaving a field out, and sending it empty.
+// Every other message is written next to its rule below.
+z.config({
+  customError: (issue) => {
+    if (issue.code === "invalid_type" && issue.input === undefined) return "This field is required.";
+    if (issue.code === "too_small" && issue.origin === "string" && issue.minimum === 1) return "This field is required.";
+    return undefined;
+  },
+});
+
 /**
  * Request validation. Every schema is strict: unknown keys are rejected, so a client
  * can never set fields it should not (verification status, NMREP ID, roles, and so on).
@@ -9,14 +19,14 @@ import { normalizeReferralCode } from "./lib/codes.js";
  * { "$gt": "" } fail validation before they reach a query.
  */
 
-const text = (max) => z.string().trim().min(1, "This field is required.").max(max, `Use ${max} characters or fewer.`);
-const optionalText = (max) => z.string().trim().max(max, `Use ${max} characters or fewer.`);
+export const text = (max) => z.string().trim().min(1, "This field is required.").max(max, `Use ${max} characters or fewer.`);
+export const optionalText = (max) => z.string().trim().max(max, `Use ${max} characters or fewer.`);
 
-const oneOf = (values) => z.enum(values, { message: "Choose one of the listed options." });
+export const oneOf = (values) => z.enum(values, { message: "Choose one of the listed options." });
 const optionalOneOf = (values) => z.union([oneOf(values), z.literal("")]);
 
 // Numbers arrive from forms as strings or numbers. "" and null mean "not provided".
-const intInRange = (min, max) =>
+export const intInRange = (min, max) =>
   z.preprocess(
     (v) => (typeof v === "string" && /^\d+$/.test(v.trim()) ? Number(v.trim()) : v),
     z.number({ message: "Enter a whole number." }).int("Enter a whole number.").min(min, `Enter ${min} or more.`).max(max, `Enter ${max} or less.`),
@@ -53,7 +63,9 @@ function buildShape(withDefaults) {
   sector: oneOf(o.sectors),
   industry: text(120),
   yearEstablished: intInRange(1900, new Date().getFullYear()),
+  hasCac: d(optionalOneOf(o.yesNo)),
   cacNumber: d(optionalText(30)),
+  hasTin: d(optionalOneOf(o.yesNo)),
   tin: d(optionalText(30)),
   // Location
   state: oneOf(o.states),
@@ -81,8 +93,8 @@ function buildShape(withDefaults) {
   };
 }
 
-/** Every profile field name, in display order. */
-export const profileFieldNames = Object.keys(buildShape(true));
+/** Every profile field name, in display order. The Yes or No answers are not counted as separate details. */
+export const profileFieldNames = Object.keys(buildShape(true)).filter((name) => name !== "hasCac" && name !== "hasTin");
 
 export const businessSchema = z.object(buildShape(true)).strict();
 
@@ -127,6 +139,18 @@ export const accountPatchSchema = z
   .strict()
   .refine((v) => Object.keys(v).length > 0, "Nothing to update.");
 
+/** Deleting an account asks for the password again, so a stolen session alone cannot do it. */
+export const deleteAccountSchema = z.object({ password: z.string().min(1).max(200) }).strict();
+
+export const forgotPasswordSchema = z.object({ email: emailSchema }).strict();
+
+/** The token from the link in an email. Random URL-safe text, so anything else is refused before it reaches a query. */
+const emailTokenText = z.string().regex(/^[A-Za-z0-9_-]{20,100}$/, "This link is invalid or has expired. Request a new one.");
+
+export const resetPasswordSchema = z.object({ token: emailTokenText, newPassword: passwordSchema }).strict();
+
+export const verifyEmailSchema = z.object({ token: emailTokenText }).strict();
+
 export const passwordChangeSchema = z
   .object({ currentPassword: z.string().min(1).max(200), newPassword: passwordSchema })
   .strict();
@@ -169,8 +193,8 @@ export const statusChangeSchema = z
   .strict();
 
 /** Query strings: an empty value means "no filter". */
-const blankToUndefined = (v) => (typeof v === "string" && v.trim() === "" ? undefined : v);
-const objectId = z.string().regex(/^[a-f0-9]{24}$/i, "Not a valid id.");
+export const blankToUndefined = (v) => (typeof v === "string" && v.trim() === "" ? undefined : v);
+export const objectId = z.string().regex(/^[a-f0-9]{24}$/i, "Not a valid id.");
 
 export const businessListQuerySchema = z
   .object({
