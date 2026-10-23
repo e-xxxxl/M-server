@@ -11,6 +11,9 @@ const applicationSchema = new mongoose.Schema(
     // A copy of the business profile at the moment of submission, so later edits cannot change what reviewers see.
     snapshot: { type: mongoose.Schema.Types.Mixed, default: null },
     submittedAt: { type: Date, default: null },
+    // Documents from the owner's wallet that were attached when this was submitted. Only visible to the
+    // organisation while the sharing agreement for this application is active (see ConsentRecord).
+    documents: { type: [mongoose.Schema.Types.ObjectId], default: [] },
     history: [
       {
         _id: false,
@@ -28,6 +31,7 @@ const applicationSchema = new mongoose.Schema(
         ret.opportunity = String(ret.opportunity);
         ret.business = String(ret.business);
         ret.owner = String(ret.owner);
+        ret.documents = (ret.documents ?? []).map(String);
         delete ret._id;
         delete ret.__v;
         return ret;

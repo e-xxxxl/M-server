@@ -4,10 +4,14 @@ import { sendAccountDeleted, sendVerification } from "../lib/account-emails.js";
 import { Application } from "../models/Application.js";
 import { Business } from "../models/Business.js";
 import { ConsentRecord } from "../models/ConsentRecord.js";
+import { Document } from "../models/Document.js";
 import { EmailToken } from "../models/EmailToken.js";
+import { documentStorage } from "../lib/document-storage.js";
 import { Notification } from "../models/Notification.js";
 import { Session } from "../models/Session.js";
 import { User } from "../models/User.js";
+import { TrainingRecord } from "../models/TrainingRecord.js";
+import { VerificationCheck } from "../models/VerificationCheck.js";
 import { hashPassword, verifyPassword } from "../lib/crypto.js";
 import { ApiError } from "../middleware/errors.js";
 import { clearSessionCookie, requireAuth } from "../middleware/security.js";
@@ -66,6 +70,11 @@ export function accountRoutes({ config, limiters }) {
     await Application.deleteMany({ owner: user._id });
     await Notification.deleteMany({ user: user._id });
     await EmailToken.deleteMany({ user: user._id });
+    // The wallet goes with the account: every file is removed from the disk, not only the records.
+    for (const doc of await Document.find({ owner: user._id }).select("storageKey")) await documentStorage.remove(doc.storageKey);
+    await Document.deleteMany({ owner: user._id });
+    await VerificationCheck.deleteMany({ owner: user._id });
+    await TrainingRecord.deleteMany({ owner: user._id });
     await ConsentRecord.updateMany({ owner: user._id, revokedAt: null }, { $set: { revokedAt: new Date(), revokedReason: "Account deleted" } });
     await Session.deleteMany({ user: user._id });
     await Business.deleteOne({ owner: user._id });

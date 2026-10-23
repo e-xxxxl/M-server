@@ -9,6 +9,7 @@ import { User } from "../models/User.js";
 import { newReferralCode, newTemporaryPassword } from "../lib/codes.js";
 import { hashPassword } from "../lib/crypto.js";
 import { issueNmrepId } from "../lib/ids.js";
+import { duplicatesOf, latestChecks, reviewerView, verificationEnabled } from "../lib/verification.js";
 import { ApiError } from "../middleware/errors.js";
 import { requireAuth, requirePasswordChanged, requireRole } from "../middleware/security.js";
 import {
@@ -172,13 +173,17 @@ export function adminRoutes({ config }) {
     const id = parseId(req.params.id);
     const business = await Business.findById(id);
     if (!business) throw new ApiError(404, "not_found", "Not found.");
-    const [owner, agent] = await Promise.all([
+    const [owner, agent, checks] = await Promise.all([
       User.findById(business.owner),
       business.referral?.agent ? Agent.findById(business.referral.agent).lean() : null,
+      latestChecks(business._id),
     ]);
+    const verificationChecks = await Promise.all(checks.map(async (c) => reviewerView(c, await duplicatesOf(c))));
     res.json({
       business: business.toJSON(),
       owner: ownerSummary(owner),
+      verificationChecks,
+      automatedChecksAvailable: verificationEnabled(config),
       referral: business.referral?.code
         ? { code: business.referral.code, agentId: agent ? String(agent._id) : null, agentName: agent?.fullName ?? null }
         : null,

@@ -3,6 +3,8 @@ import { criterionKinds } from "./lib/eligibility.js";
 import {
   adminSettableStatuses,
   applicationStatuses,
+  assessmentResults,
+  trainingModes,
   criterionLevels,
   organisationTypesAvailable,
   opportunityTypes,
@@ -156,6 +158,7 @@ const consentSchema = z
     summary: z.boolean().default(false),
     contact: z.boolean().default(false),
     profile: z.boolean().default(false),
+    documents: z.boolean().default(false),
   })
   .strict();
 
@@ -165,6 +168,8 @@ export const applicationSaveSchema = z
     message: optionalText(500).default(""),
     submit: z.boolean().default(false),
     consent: consentSchema.optional(),
+    // Documents from the wallet to attach when submitting. Needs consent.documents.
+    documentIds: z.array(objectId).max(10, "Attach 10 documents or fewer.").default([]),
   })
   .strict();
 
@@ -186,3 +191,58 @@ export const opportunityListQuerySchema = z
   .strict();
 
 export const notificationReadSchema = z.object({ ids: z.array(objectId).max(100).optional() }).strict();
+
+// ---------------------------------------------------------------------------
+// Training: the plan, attendance, assessment and completion
+// ---------------------------------------------------------------------------
+
+/** A session day such as 2027-03-15, kept as the start of that day in Nigeria. */
+const dayRequired = z
+  .string({ message: "This field is required." })
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Use the date format YYYY-MM-DD.")
+  .transform((v, ctx) => {
+    const d = new Date(`${v}T00:00:00.000+01:00`);
+    if (Number.isNaN(d.getTime())) {
+      ctx.addIssue({ code: "custom", message: "Enter a valid date." });
+      return null;
+    }
+    return d;
+  });
+
+const sessionInputSchema = z.object({ id: objectId.optional(), title: text(100), on: dayRequired }).strict();
+
+/** The whole plan, sent as one piece. Sessions that carry an id are kept (and renamed or moved); the others are new. */
+export const trainingPlanSchema = z
+  .object({
+    mode: oneOf(trainingModes),
+    venue: optionalText(200).default(""),
+    startsOn: opensOnSchema.default(null),
+    endsOn: opensOnSchema.default(null),
+    sessions: z.array(sessionInputSchema).max(60, "Use 60 sessions or fewer.").default([]),
+    minSessions: intInRange(0, 60).default(0),
+    requirePass: z.boolean({ message: "Choose yes or no." }).default(false),
+  })
+  .strict()
+  .superRefine((plan, ctx) => {
+    if (plan.startsOn && plan.endsOn && plan.endsOn < plan.startsOn) {
+      ctx.addIssue({ code: "custom", path: ["endsOn"], message: "The end date must not be before the start date." });
+    }
+    if (plan.minSessions > plan.sessions.length) {
+      ctx.addIssue({ code: "custom", path: ["minSessions"], message: "This cannot be more than the number of sessions." });
+    }
+  });
+
+export const attendanceSchema = z
+  .object({
+    sessionId: objectId,
+    marks: z.array(z.object({ applicationId: objectId, present: z.boolean({ message: "Choose present or absent." }) }).strict()).min(1, "Mark at least one participant.").max(500, "Mark 500 participants or fewer."),
+  })
+  .strict();
+
+const scoreSchema = z.union([z.literal("").transform(() => null), z.null(), intInRange(0, 100)]);
+
+export const assessmentSchema = z
+  .object({ applicationId: objectId, result: oneOf(assessmentResults), score: scoreSchema.default(null), note: optionalText(200).default("") })
+  .strict();
+
+export const completeSchema = z.object({ note: optionalText(200).default("") }).strict();

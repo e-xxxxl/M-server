@@ -606,6 +606,73 @@ It prints `Resend accepted the message`. Check your inbox and your spam folder. 
 - To stop the update emails (verification and application decisions) but keep reset and confirmation emails, set `EMAIL_NOTIFICATIONS=false`.
 - The links go to `https://nmrep.ng/reset-password/` and `https://nmrep.ng/verify-email/`. **Those pages are part of the frontend**, so they work only after you upload the new website (section 14). Until then, the links in emails lead to a missing page.
 
+### 10.6 Automated verification checks (Prembly), optional
+
+Owners can check their NIN, BVN, CAC number and TIN from **Verification** in their dashboard. This is **off** until you add two settings, and manual review works without it. Every provider call can cost money, so create the Prembly account first, fund the wallet only with what you are happy to spend, and read the limits below.
+
+1. In the Prembly dashboard create a **live** API key for the services NIN, BVN, CAC and TIN. Copy it into your password manager. Prembly does not publish a separate test host, so every call is real and billed.
+2. Create the fingerprint secret on the server (it is not a password you need to remember, but **keep a copy in your password manager and never change it**, or earlier fingerprints stop matching):
+
+   ```bash
+   node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+   ```
+
+3. Add both lines to `/opt/nmrep/shared/.env` (no spaces, no quotes), then restart:
+
+   ```
+   PREMBLY_API_KEY=your_real_prembly_key
+   VERIFICATION_HASH_KEY=the_long_random_value_from_step_2
+   ```
+
+   ```bash
+   sudo systemctl restart nmrep-api
+   sudo journalctl -u nmrep-api -n 10 --no-pager      # there must be NO "Automated verification checks are off" warning
+   ```
+
+What the owner and the platform do:
+
+- **NIN and BVN** are typed by the owner, who must tick an agreement. The number is sent once to Prembly and is never stored or logged. NMREP keeps the last four digits, a keyed fingerprint (so the same number on two accounts can be noticed), whether the name and phone matched, and Prembly's reference. The date of birth, address and photo that Prembly returns are thrown away immediately.
+- **CAC and TIN** use the numbers already in the business profile.
+- A passed check moves an **Unverified** business to **Pending Verification** so it appears in the admin review queue. **Only an administrator can set Verified.**
+- Each business can run a type of check **3 times** and all checks **8 times** per rolling 24 hours (`VERIFICATION_MAX_PER_TYPE_PER_DAY`, `VERIFICATION_MAX_PER_DAY`). A number that already passed is answered from the saved result without calling Prembly again.
+- If Prembly refuses the key or the wallet is empty, owners see "Verification is not available right now" and the server log says `Verification provider refused the request: HTTP 402` (or 401, 403). Top up the wallet or replace the key. Log lines never contain numbers or keys.
+- Deleting an account deletes its check results.
+
+### 10.7 The document wallet, optional
+
+Owners can keep documents (CAC certificate, licences, and so on) in **Documents** and attach chosen ones to an application. It is **off** until you set a key. Files never go to a third party: they are encrypted on this server and stored in a private folder.
+
+1. Create the key on your own computer or on the server (it prints once; **keep a copy in your password manager, separately from the backups**):
+
+   ```bash
+   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+   ```
+
+2. Add to `/opt/nmrep/shared/.env` (no spaces, no quotes):
+
+   ```
+   DOCUMENT_ENCRYPTION_KEY=the_value_from_step_1
+   DOCUMENT_STORAGE_DIR=/var/lib/nmrep/documents
+   ```
+
+3. The service file already has `StateDirectory=nmrep`, which makes systemd create `/var/lib/nmrep` for the service user with mode 0700. If you installed the service file before this change, copy the new `deploy/nmrep-api.service` over `/etc/systemd/system/nmrep-api.service`, then:
+
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl restart nmrep-api
+   sudo journalctl -u nmrep-api -n 10 --no-pager      # there must be NO "document wallet is off" warning
+   sudo ls -ld /var/lib/nmrep                         # drwx------ nmrep nmrep
+   ```
+
+What to know:
+
+- Each file is encrypted with AES-256-GCM before it is written, under a random name, with a fresh random value for every file. A copy of the folder or of a backup cannot be read without the key. **If the key is lost, every stored document is lost. Never change it while documents exist.**
+- The type is decided from the first bytes of the file (PDF, JPEG or PNG only), never from its name. Limits: 5 MB per file, 20 files and 40 MB per business (`DOCUMENT_MAX_MB`, `DOCUMENT_MAX_FILES`, `DOCUMENT_MAX_TOTAL_MB`). The files are not scanned for viruses; downloads are always sent as attachments with `nosniff`.
+- An organisation sees only the documents an owner attached to an application, only while that sharing is active (withdrawn, replaced and deleted ends it), and **every download by an organisation or by NMREP staff is written to the activity log**.
+- The nightly backup script now also saves `/var/lib/nmrep/documents` to `/var/backups/nmrep/nmrep-documents-*.tar.gz`. Copy those off the server like the database backups.
+- nginx already allows requests up to 64 KB. **Uploads need more**: set `client_max_body_size 8m;` in the `location /api/documents` block (the site file in `deploy/nginx-api.nmrep.ng.conf` has it), then `sudo nginx -t && sudo systemctl reload nginx`.
+- Deleting an account deletes its files from the disk.
+
 ---
 
 ## 11. Check everything, then reboot once

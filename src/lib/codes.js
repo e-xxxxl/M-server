@@ -10,6 +10,19 @@ export function newReferralCode() {
   return `NMR-${out}`;
 }
 
+/** A certificate code such as NMC-7K3QXM9P2T (10 random characters, about 10^15 combinations, so it cannot be guessed). */
+export function newCertificateCode() {
+  let out = "";
+  for (const byte of crypto.randomBytes(10)) out += ALPHABET[byte % ALPHABET.length];
+  return `NMC-${out}`;
+}
+
+/** Certificate codes are compared in capitals with no spaces, and a missing hyphen is restored. */
+export function normalizeCertificateCode(value) {
+  const compact = String(value ?? "").replace(/\s+/g, "").toUpperCase();
+  return /^NMC[A-Z0-9]{10}$/.test(compact) ? `NMC-${compact.slice(3)}` : compact;
+}
+
 /**
  * Codes are compared in capitals with no spaces, and a missing hyphen is restored, so "nmr 7k3qxm",
  * "NMR7K3QXM" and "NMR-7K3QXM" are all the same code.

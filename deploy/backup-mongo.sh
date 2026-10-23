@@ -27,14 +27,26 @@ chmod 600 "$FILE"
 SIZE="$(stat -c %s "$FILE")"
 if [[ "$SIZE" -lt 1000 ]]; then echo "Backup $FILE is only $SIZE bytes. Check the database login."; exit 1; fi
 
+# The document wallet's files. They are already encrypted, so a copy is safe to keep and to send off the server, and
+# useless without DOCUMENT_ENCRYPTION_KEY (keep that key in your password manager, never in the same place as the backup).
+DOCS=/var/lib/nmrep/documents
+DOCFILE="$DEST/nmrep-documents-$STAMP.tar.gz"
+if [[ -d "$DOCS" ]]; then
+  tar -czf "$DOCFILE.part" -C "$(dirname "$DOCS")" "$(basename "$DOCS")"
+  mv "$DOCFILE.part" "$DOCFILE"
+  chmod 600 "$DOCFILE"
+  echo "Documents backup written: $DOCFILE ($(stat -c %s "$DOCFILE") bytes)"
+fi
+
 find "$DEST" -name 'nmrep-*.archive.gz' -mtime +"$KEEP_DAYS" -delete
+find "$DEST" -name 'nmrep-documents-*.tar.gz' -mtime +"$KEEP_DAYS" -delete
 echo "Backup written: $FILE ($SIZE bytes)"
 
 # ------------------------------------------------------------------------------------------------
 # OFF-SERVER COPY. Choose one, uncomment it and fill in the details. Test it by running this script by hand.
 #
 # 1) To another Linux server over SSH (create a key without a passphrase on this server, dedicated to this job):
-#    scp -i /root/.ssh/nmrep_backup_key -o StrictHostKeyChecking=yes "$FILE" backupuser@other-server:/backups/nmrep/
+#    scp -i /root/.ssh/nmrep_backup_key -o StrictHostKeyChecking=yes "$FILE" "${DOCFILE:-/dev/null}" backupuser@other-server:/backups/nmrep/
 #
 # 2) To an S3 compatible bucket with rclone (apt install rclone; rclone config):
 #    rclone copy "$FILE" remote:nmrep-backups --quiet

@@ -4,6 +4,7 @@ import { openOpportunity } from "../lib/announce.js";
 import { toCsv } from "../lib/csv.js";
 import { evaluate } from "../lib/eligibility.js";
 import { applicationStatuses, reviewTransitions, reviewableStatuses } from "../lib/opportunity-constants.js";
+import { sendDocument, sharedView, visibleDocuments } from "../lib/documents.js";
 import { applyReview } from "../lib/review.js";
 import { Agent } from "../models/Agent.js";
 import { Application } from "../models/Application.js";
@@ -16,6 +17,7 @@ import { User } from "../models/User.js";
 import { ApiError } from "../middleware/errors.js";
 import { requireAuth, requirePasswordChanged, requireRole } from "../middleware/security.js";
 import { idParamSchema } from "../schemas.js";
+import { trainingStaffRoutes } from "./training.js";
 import {
   applicationListQuerySchema,
   applicationStatusSchema,
@@ -50,6 +52,9 @@ async function organisationsById(ids) {
 export function adminOpportunityRoutes({ config }) {
   const router = Router();
   router.use(requireAuth(config), requireRole("admin", "super_admin"), requirePasswordChanged);
+
+  // Running any training: plan, attendance, assessment and certificates.
+  router.use("/training", trainingStaffRoutes({ scope: () => ({}), viewer: "admin" }));
 
   // ------------------------------------------------------------ opportunities
   router.get("/opportunities", async (req, res) => {
@@ -219,9 +224,22 @@ export function adminOpportunityRoutes({ config }) {
       // How the business compared with the requirements when it submitted.
       fit: opportunity && application.snapshot ? evaluate(opportunity.criteria, application.snapshot) : null,
       consents: consents.map((c) => c.toJSON()),
+      documents: (await visibleDocuments(application)).map(sharedView),
       allowed: reviewTransitions[application.status] ?? [],
     });
   });
+
+  // A document attached to this application, while the owner's sharing agreement is active. Every download is logged.
+  router.get("/applications/:id/documents/:docId", async (req, res) => {
+    const application = await Application.findById(parseId(req.params.id));
+    if (!application || application.status === "Draft") throw new ApiError(404, "not_found", "Not found.");
+    const docs = await visibleDocuments(application);
+    const doc = docs.find((d) => String(d._id) === parseId(req.params.docId));
+    if (!doc) throw new ApiError(404, "not_found", "Not found.");
+    await audit(req.user, "document.download", `Downloaded "${doc.title}" (${doc.kind}) from an application`, { type: "application", id: application._id });
+    await sendDocument(res, doc);
+  });
+
 
   router.post("/applications/:id/status", async (req, res) => {
     const { status, note } = applicationStatusSchema.parse(req.body);

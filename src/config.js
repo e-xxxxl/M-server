@@ -52,6 +52,27 @@ export function loadConfig(env = process.env) {
       reset: Number(env.RATE_LIMIT_RESET ?? 10),
     },
     bcryptRounds: Number(env.BCRYPT_ROUNDS ?? 12),
+    // Automated identity and business checks through Prembly (NIN, BVN, CAC, TIN). Server side only. Without both
+    // PREMBLY_API_KEY and VERIFICATION_HASH_KEY the feature is off and everything else still works.
+    verification: {
+      apiKey: env.PREMBLY_API_KEY ?? "",
+      baseUrl: (env.PREMBLY_BASE_URL ?? "https://api.prembly.com").replace(/\/+$/, ""),
+      // A long random secret used to fingerprint NIN and BVN numbers (HMAC), so the same number used on two accounts
+      // can be noticed without the number itself ever being stored. Never change it after launch.
+      hashKey: env.VERIFICATION_HASH_KEY ?? "",
+      // Every provider call can cost money, so each type of check is limited per business per rolling 24 hours.
+      maxPerTypePerDay: Number(env.VERIFICATION_MAX_PER_TYPE_PER_DAY ?? 3),
+      maxPerDay: Number(env.VERIFICATION_MAX_PER_DAY ?? 8),
+    },
+    // The document wallet. Files are encrypted (AES-256-GCM) before they are written to a private folder on this
+    // server. Without a 32 byte key (base64) the wallet is off and everything else still works.
+    documents: {
+      dir: env.DOCUMENT_STORAGE_DIR || "storage/documents",
+      encryptionKey: env.DOCUMENT_ENCRYPTION_KEY ?? "",
+      maxFileBytes: Number(env.DOCUMENT_MAX_MB ?? 5) * 1024 * 1024,
+      maxFiles: Number(env.DOCUMENT_MAX_FILES ?? 20),
+      maxTotalBytes: Number(env.DOCUMENT_MAX_TOTAL_MB ?? 40) * 1024 * 1024,
+    },
     // Email through Resend. Without RESEND_API_KEY and EMAIL_FROM, email is switched off and everything else still works.
     email: {
       apiKey: env.RESEND_API_KEY ?? "",

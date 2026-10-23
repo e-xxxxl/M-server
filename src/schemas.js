@@ -155,6 +155,24 @@ export const passwordChangeSchema = z
   .object({ currentPassword: z.string().min(1).max(200), newPassword: passwordSchema })
   .strict();
 
+/**
+ * Running an automated check. CAC and TIN use the number already in the business profile, so the request only names
+ * the type. NIN and BVN need the number typed by the owner and the owner's explicit agreement; the number is used for
+ * this one request and is not stored.
+ */
+const elevenDigits = z.string().trim().regex(/^[0-9]{11}$/, "Enter the 11 digits, with no spaces or dashes.");
+const agreement = z.literal(true, { message: "Please agree so we can run this check." });
+export const verificationCheckSchema = z.discriminatedUnion(
+  "type",
+  [
+    z.object({ type: z.literal("cac") }).strict(),
+    z.object({ type: z.literal("tin") }).strict(),
+    z.object({ type: z.literal("nin"), number: elevenDigits, consent: agreement }).strict(),
+    z.object({ type: z.literal("bvn"), number: elevenDigits, consent: agreement }).strict(),
+  ],
+  { message: "Choose one of the listed options." },
+);
+
 // ---------------------------------------------------------------------------
 // Admin portal
 // ---------------------------------------------------------------------------

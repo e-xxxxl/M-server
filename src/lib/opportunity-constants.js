@@ -49,8 +49,8 @@ export const editable = ["Draft", "Withdrawn", "More Information Required"];
 export const beneficiaryStatuses = ["Approved", "Completed"];
 
 /**
- * Organisation types from the framework document. Training providers and funding partners have their own
- * tools planned for a later phase, so they cannot be created yet.
+ * Organisation types from the framework document. Training providers have the training tools (see lib/training.js).
+ * Funding partners have their own tools planned for a later phase, so they cannot be created yet.
  */
 export const organisationTypes = [
   "Government Ministry",
@@ -63,4 +63,10 @@ export const organisationTypes = [
   "Training Provider",
   "Funding Partner",
 ];
-export const organisationTypesAvailable = organisationTypes.filter((t) => t !== "Training Provider" && t !== "Funding Partner");
+export const organisationTypesAvailable = organisationTypes.filter((t) => t !== "Funding Partner");
+
+/** How a training is delivered. */
+export const trainingModes = ["In person", "Online", "Hybrid"];
+
+/** What an assessment can say. A training without an assessment simply has none recorded. */
+export const assessmentResults = ["Passed", "Failed"];

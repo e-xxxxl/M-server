@@ -3,6 +3,9 @@ import mongoose from "mongoose";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { configureMailer } from "./lib/mailer.js";
+import { configureDocumentStorage } from "./lib/document-storage.js";
+import { configurePrembly } from "./lib/prembly.js";
+import { verificationEnabled } from "./lib/verification.js";
 
 const config = loadConfig();
 
@@ -33,6 +36,14 @@ if (!mail.enabled) {
       ? "WARNING: email is OFF (RESEND_API_KEY or EMAIL_FROM is not set). Password reset and confirmation emails will not be sent."
       : "Email is off (no RESEND_API_KEY). Emails are printed here instead of being sent.",
   );
+}
+
+configurePrembly(config);
+if (!configureDocumentStorage(config).enabled) {
+  console.warn("The document wallet is off (DOCUMENT_ENCRYPTION_KEY is not set, or is not 32 bytes as base64). Everything else still works.");
+}
+if (!verificationEnabled(config)) {
+  console.warn("Automated verification checks are off (PREMBLY_API_KEY or VERIFICATION_HASH_KEY is not set, or the hash key is shorter than 32 characters). Manual review still works.");
 }
 
 if (config.session.allowBearer) {

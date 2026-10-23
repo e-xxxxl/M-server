@@ -2,6 +2,7 @@ import { Router } from "express";
 import mongoose from "mongoose";
 import { evaluate } from "../lib/eligibility.js";
 import { applicationStatuses, beneficiaryStatuses, reviewTransitions, reviewableStatuses } from "../lib/opportunity-constants.js";
+import { sendDocument, sharedView, visibleDocuments } from "../lib/documents.js";
 import { applyReview } from "../lib/review.js";
 import { applicantView } from "../lib/sharing.js";
 import { Application } from "../models/Application.js";
@@ -13,6 +14,7 @@ import { User } from "../models/User.js";
 import { ApiError } from "../middleware/errors.js";
 import { requireAuth, requirePasswordChanged, requireRole } from "../middleware/security.js";
 import { idParamSchema } from "../schemas.js";
+import { trainingStaffRoutes } from "./training.js";
 import {
   applicationListQuerySchema,
   applicationStatusSchema,
@@ -55,6 +57,9 @@ export function partnerRoutes({ config }) {
     if (!req.org) throw new ApiError(404, "not_found", "Not found.");
     next();
   });
+
+  // Running a training (plan, attendance, assessment, certificates), limited to this organisation's own trainings.
+  router.use("/training", trainingStaffRoutes({ scope: (req) => ({ organisation: req.org._id }), viewer: "partner" }));
 
   const ownOpportunity = async (req, idValue) => {
     const opportunity = await Opportunity.findOne({ _id: parseId(idValue), organisation: req.org._id });
@@ -214,9 +219,22 @@ export function partnerRoutes({ config }) {
       shared,
       // How the business compared with the requirements, from the profile summary it agreed to share.
       fit: applicant && application.snapshot ? evaluate(opportunity.criteria, application.snapshot) : null,
+      // Documents the owner chose to share, while the agreement is active.
+      documents: (await visibleDocuments(application)).map(sharedView),
       allowed: reviewTransitions[application.status] ?? [],
     });
   });
+
+  // A document attached to this application, while the owner's sharing agreement is active. Every download is logged.
+  router.get("/applications/:id/documents/:docId", async (req, res) => {
+    const { application } = await ownApplication(req, req.params.id);
+    const docs = await visibleDocuments(application);
+    const doc = docs.find((d) => String(d._id) === parseId(req.params.docId));
+    if (!doc) throw new ApiError(404, "not_found", "Not found.");
+    await audit(req.user, "document.download", `Downloaded "${doc.title}" (${doc.kind}) from an application`, { type: "application", id: application._id });
+    await sendDocument(res, doc);
+  });
+
 
   router.post("/applications/:id/status", async (req, res) => {
     const { status, note } = applicationStatusSchema.parse(req.body);

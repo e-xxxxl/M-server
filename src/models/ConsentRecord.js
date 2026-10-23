@@ -16,6 +16,8 @@ const consentSchema = new mongoose.Schema({
   purpose: { type: String, required: true, maxlength: 200 },
   // "summary", "contact" and "profile". See lib/sharing.js for exactly which fields each one covers.
   categories: { type: [String], required: true },
+  // The documents shared, when the "documents" category was agreed to. Empty otherwise.
+  documents: { type: [mongoose.Schema.Types.ObjectId], default: [] },
   grantedAt: { type: Date, default: Date.now },
   revokedAt: { type: Date, default: null },
   revokedReason: { type: String, maxlength: 100, default: "" },
@@ -28,6 +30,7 @@ consentSchema.set("toJSON", {
     ret.id = String(ret._id);
     ret.application = String(ret.application);
     ret.opportunity = String(ret.opportunity);
+    ret.documents = (ret.documents ?? []).map(String);
     delete ret._id;
     delete ret.__v;
     delete ret.owner;

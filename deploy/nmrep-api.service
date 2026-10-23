@@ -25,7 +25,12 @@ RestartSec=5
 # Give a request a moment to finish when the service is stopped.
 TimeoutStopSec=20
 
-# Hardening: the API needs the network and its own folder, and nothing else.
+# The document wallet's encrypted files live in /var/lib/nmrep/documents. systemd creates the folder for the service
+# user and keeps it private (mode 0700), and it is the one place outside the release folder the API may write to.
+StateDirectory=nmrep
+StateDirectoryMode=0700
+
+# Hardening: the API needs the network and its own folders, and nothing else.
 NoNewPrivileges=true
 PrivateTmp=true
 PrivateDevices=true

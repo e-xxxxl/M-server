@@ -7,6 +7,7 @@ import { profileFieldNames, idParamSchema } from "../schemas.js";
 import { applicationSaveSchema, notificationReadSchema, opportunityQuerySchema } from "../schemas-opportunities.js";
 import { Application } from "../models/Application.js";
 import { Business } from "../models/Business.js";
+import { Document } from "../models/Document.js";
 import { ConsentRecord } from "../models/ConsentRecord.js";
 import { Notification } from "../models/Notification.js";
 import { Opportunity } from "../models/Opportunity.js";
@@ -136,7 +137,7 @@ export function opportunityRoutes({ config }) {
   // Save a draft, or save and submit. Needs an open opportunity, a business that meets every required requirement,
   // and (to submit) the owner's agreement to share their business summary with the organisation.
   applications.post("/", async (req, res) => {
-    const { opportunityId, message, submit, consent } = applicationSaveSchema.parse(req.body);
+    const { opportunityId, message, submit, consent, documentIds } = applicationSaveSchema.parse(req.body);
     const opportunity = await Opportunity.findById(opportunityId);
     if (!opportunity || ["Draft", "Pending Approval"].includes(opportunity.status)) throw new ApiError(404, "not_found", "Not found.");
     const org = await organisationOf(opportunity);
@@ -159,6 +160,24 @@ export function opportunityRoutes({ config }) {
       });
     }
 
+    // Documents are attached only when submitting, only with the owner's agreement, and only from their own wallet.
+    const attach = submit ? [...new Set(documentIds)] : [];
+    if (submit) {
+      if (attach.length > 0 && !consent?.documents) {
+        throw new ApiError(422, "consent_required", "Please agree to share your documents to attach them.", {
+          "consent.documents": `Tick "Documents you choose" to share these documents with ${org?.name ?? "NMREP"}.`,
+        });
+      }
+      if (consent?.documents && attach.length === 0) {
+        throw new ApiError(422, "validation", "Please check the highlighted fields.", { documentIds: "Choose at least one document to share, or untick the box." });
+      }
+      if (attach.length > 0) {
+        const owned = new Set((await Document.find({ _id: mongoose.trusted({ $in: attach }), owner: req.user._id }).select("_id")).map((d) => String(d._id)));
+        const missing = attach.findIndex((id) => !owned.has(id));
+        if (missing >= 0) throw new ApiError(422, "validation", "Please check the highlighted fields.", { [`documentIds.${missing}`]: "This document is not in your wallet." });
+      }
+    }
+
     const answering = application?.status === "More Information Required";
     if (!application) {
       application = new Application({
@@ -177,6 +196,7 @@ export function opportunityRoutes({ config }) {
       application.status = "Submitted";
       application.submittedAt = answering ? application.submittedAt : new Date();
       application.snapshot = snapshotOf(business);
+      application.documents = attach;
       application.history.push({ status: "Submitted", note: answering ? "The applicant answered the request for more information" : "Submitted by the applicant" });
     }
     try {
@@ -201,6 +221,7 @@ export function opportunityRoutes({ config }) {
         sharedWith: org?.name ?? "NMREP",
         purpose: `Application for "${opportunity.title}"`.slice(0, 200),
         categories: categoryKeys.filter((k) => consent[k] === true),
+        documents: attach,
       });
     }
     res.status(201).json({ application: application.toJSON() });

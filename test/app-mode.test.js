@@ -270,7 +270,7 @@ describe("reference data", () => {
     }
     assert.deepEqual(data.opportunityTypes, ["Funding", "Grant", "Loan", "Training", "Support"]);
     assert.ok(data.applicationStatuses.includes("More Information Required"));
-    assert.deepEqual(data.sharingCategories.map((c) => c.key), ["summary", "contact", "profile"]);
+    assert.deepEqual(data.sharingCategories.map((c) => c.key), ["summary", "contact", "profile", "documents"]);
     assert.equal(data.sharingCategories[0].required, true);
     // fetch adds "Cache-Control: no-cache" to a conditional request, which defeats the check, so ask with plain http.
     const status = await new Promise((resolve, reject) => {

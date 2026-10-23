@@ -13,6 +13,10 @@ import { partnerRoutes } from "./routes/partner.js";
 import { authRoutes } from "./routes/auth.js";
 import { businessRoutes } from "./routes/business.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
+import { verificationRoutes } from "./routes/verification.js";
+import { documentRoutes } from "./routes/documents.js";
+import { healthProfileRoutes } from "./routes/health-profile.js";
+import { certificateRoutes, trainingOwnerRoutes } from "./routes/training.js";
 import { errorHandler, notFound } from "./middleware/errors.js";
 import { createLimiters, requireAllowedOrigin } from "./middleware/security.js";
 
@@ -32,7 +36,7 @@ export function createApp(config, { log = true } = {}) {
         callback(null, !origin || config.corsOrigins.includes(origin));
       },
       credentials: true,
-      methods: ["GET", "POST", "PATCH", "DELETE"],
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
       allowedHeaders: ["Content-Type", "Authorization"],
       maxAge: 600,
     }),
@@ -69,6 +73,9 @@ export function createApp(config, { log = true } = {}) {
   app.use("/api/account", accountRoutes({ config, limiters }));
   app.use("/api/business", businessRoutes({ config }));
   app.use("/api/dashboard", dashboardRoutes({ config }));
+  app.use("/api/verification", verificationRoutes({ config }));
+  app.use("/api/documents", documentRoutes({ config }));
+  app.use("/api/health-profile", healthProfileRoutes({ config }));
   app.use("/api/admin", adminRoutes({ config }));
   app.use("/api/admin", adminOpportunityRoutes({ config }));
   app.use("/api/admin", adminOrganisationRoutes({ config }));
@@ -78,6 +85,8 @@ export function createApp(config, { log = true } = {}) {
   app.use("/api/applications", owner.applications);
   app.use("/api/notifications", owner.notifications);
   app.use("/api/consents", owner.consents);
+  app.use("/api/training", trainingOwnerRoutes({ config }));
+  app.use("/api/certificates", certificateRoutes({ limiter: limiters.reset }));
 
   app.use(notFound);
   app.use(errorHandler);

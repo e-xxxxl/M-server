@@ -74,14 +74,14 @@ describe("organisations and partner logins", () => {
     assert.equal((await call("GET", "/api/admin/organisations", { cookie: superAdmin, origin: null })).status, 200);
   });
 
-  it("validates types, offers the government ones, keeps training providers and funding partners for later, and refuses duplicate names", async () => {
+  it("validates types, offers the government ones, offers training providers, keeps funding partners for later, and refuses duplicate names", async () => {
     const make = (body) => call("POST", "/api/admin/organisations", { cookie: admin, body });
     const stamp = Date.now();
     const ministry = await make({ name: `Ministry ${stamp}`, type: "Government Ministry" });
     assert.equal(ministry.status, 201);
     assert.equal((await make({ name: `Agency ${stamp}`, type: "Government Agency" })).status, 201);
     assert.equal((await make({ name: `Bad ${stamp}`, type: "Spaceship" })).status, 422);
-    assert.equal((await make({ name: `Train ${stamp}`, type: "Training Provider" })).status, 422);
+    assert.equal((await make({ name: `Train ${stamp}`, type: "Training Provider" })).status, 201);
     assert.equal((await make({ name: `Fund ${stamp}`, type: "Funding Partner" })).status, 422);
     assert.equal((await make({ name: "", type: "Bank" })).status, 422);
     assert.equal((await make({ name: `Extra ${stamp}`, type: "Bank", active: false })).status, 422, "no unknown fields");
@@ -90,7 +90,8 @@ describe("organisations and partner logins", () => {
     assert.equal(dup.json.error.code, "name_taken");
     const types = await call("GET", "/api/admin/organisation-types", { cookie: admin, origin: null });
     assert.ok(types.json.available.includes("Government Ministry") && types.json.available.includes("Bank"));
-    assert.deepEqual(types.json.later.sort(), ["Funding Partner", "Training Provider"]);
+    assert.ok(types.json.available.includes("Training Provider"));
+    assert.deepEqual(types.json.later, ["Funding Partner"]);
   });
 
   it("a new partner login must replace its temporary password before anything else", async () => {
@@ -326,7 +327,7 @@ describe("consent and what a partner can see", () => {
     const o = await owner();
     const detail = await call("GET", `/api/opportunities/${id}`, { cookie: o.cookie, origin: null });
     assert.equal(detail.json.sharing.with, p.name);
-    assert.deepEqual(detail.json.sharing.categories.map((c) => c.key), ["summary", "contact", "profile"]);
+    assert.deepEqual(detail.json.sharing.categories.map((c) => c.key), ["summary", "contact", "profile", "documents"]);
     assert.equal(detail.json.sharing.categories[0].required, true);
     assert.match(detail.json.sharing.neverShared, /NIN, BVN/);
 
