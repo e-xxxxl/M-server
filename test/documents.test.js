@@ -390,3 +390,56 @@ describe("the website can upload", () => {
     assert.equal(res.headers.get("access-control-allow-credentials"), "true");
   });
 });
+
+describe("document check for verification", () => {
+  it("an owner chooses wallet documents for NMREP's reviewers, who can open them, and every download is logged", async () => {
+    const o = await owner();
+    const cac = await upload(o, { kind: "CAC Certificate", title: "Registration" });
+    const id = await upload(o, { kind: "ID", title: "My passport", bytes: jpeg(), type: "image/jpeg", name: "id.jpg" });
+    assert.equal(cac.status, 201);
+
+    const before = await call("GET", "/api/verification", { cookie: o.cookie });
+    assert.equal(before.json.documents.available, true);
+    assert.deepEqual(before.json.documents.shared, []);
+    assert.ok(before.json.documents.suggestedKinds.includes("CAC Certificate"));
+
+    const noAgree = await call("PUT", "/api/verification/documents", { cookie: o.cookie, body: { documentIds: [cac.json.document.id] } });
+    assert.equal(noAgree.status, 422);
+    assert.equal(noAgree.json.error.code, "consent_required");
+
+    const stranger = await call("PUT", "/api/verification/documents", { cookie: o.cookie, body: { documentIds: ["a".repeat(24)], agree: true } });
+    assert.equal(stranger.status, 422);
+
+    const sent = await call("PUT", "/api/verification/documents", { cookie: o.cookie, body: { documentIds: [cac.json.document.id, id.json.document.id], agree: true } });
+    assert.equal(sent.status, 200, JSON.stringify(sent.json));
+    assert.equal(sent.json.verificationStatus, "Pending Verification", "sending documents puts the business in the review queue");
+    assert.deepEqual(sent.json.documents.shared.map((d) => d.kind).sort(), ["CAC Certificate", "ID"]);
+    assert.ok(sent.json.documents.sharedAt);
+
+    // Reviewers see the list and can download, and the download is written to the activity log.
+    const list = await call("GET", "/api/admin/businesses", { cookie: admin, origin: null });
+    const bizId = (await call("GET", "/api/dashboard", { cookie: o.cookie })).json.business.id;
+    assert.ok(list.status === 200 && bizId);
+    const detail = await call("GET", `/api/admin/businesses/${bizId}`, { cookie: admin, origin: null });
+    assert.deepEqual(detail.json.verificationDocuments.map((d) => d.kind).sort(), ["CAC Certificate", "ID"]);
+    const file = await download(`/api/admin/businesses/${bizId}/documents/${cac.json.document.id}`, admin);
+    assert.equal(file.status, 200);
+    assert.equal(file.headers.get("content-type"), "application/pdf");
+    const log = await AuditLog.findOne({ action: "document.download", summary: /for verification of/ }).sort({ createdAt: -1 });
+    assert.ok(log, "the download is recorded");
+
+    // A document that was not chosen cannot be opened, and nobody else can.
+    const other = await upload(o, { kind: "Tax Clearance", title: "Not shared" });
+    assert.equal((await download(`/api/admin/businesses/${bizId}/documents/${other.json.document.id}`, admin)).status, 404);
+    assert.equal((await download(`/api/admin/businesses/${bizId}/documents/${cac.json.document.id}`, o.cookie)).status, 403);
+
+    // Deleting a document ends its sharing, and an empty list ends all of it.
+    assert.equal((await call("DELETE", `/api/documents/${id.json.document.id}`, { cookie: o.cookie })).status, 204);
+    const afterDelete = await call("GET", "/api/verification", { cookie: o.cookie });
+    assert.deepEqual(afterDelete.json.documents.shared.map((d) => d.kind), ["CAC Certificate"]);
+    const ended = await call("PUT", "/api/verification/documents", { cookie: o.cookie, body: { documentIds: [] } });
+    assert.equal(ended.status, 200);
+    assert.deepEqual(ended.json.documents.shared, []);
+    assert.equal((await download(`/api/admin/businesses/${bizId}/documents/${cac.json.document.id}`, admin)).status, 404);
+  });
+});

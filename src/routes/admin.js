@@ -10,6 +10,8 @@ import { newReferralCode, newTemporaryPassword } from "../lib/codes.js";
 import { hashPassword } from "../lib/crypto.js";
 import { issueNmrepId } from "../lib/ids.js";
 import { duplicatesOf, latestChecks, reviewerView, verificationEnabled } from "../lib/verification.js";
+import { sendDocument, sharedView } from "../lib/documents.js";
+import { submittedDocuments } from "../lib/verification-documents.js";
 import { ApiError } from "../middleware/errors.js";
 import { requireAuth, requirePasswordChanged, requireRole } from "../middleware/security.js";
 import {
@@ -44,6 +46,10 @@ const ownerSummary = (user) =>
         phone: user.phone,
         createdAt: user.createdAt,
         lastLoginAt: user.lastLoginAt,
+        // false when an administrator has revoked the account.
+        active: user.active !== false,
+        // The end of the paid registration year. null = never paid (or the fee is off).
+        registrationPaidUntil: user.registrationPaidUntil ?? null,
       }
     : null;
 
@@ -151,6 +157,7 @@ export function adminRoutes({ config }) {
                 businessName: 1,
                 ownerName: 1,
                 email: "$ownerUser.email",
+                accountActive: { $ne: ["$ownerUser.active", false] },
                 state: 1,
                 sector: 1,
                 verificationStatus: 1,
@@ -179,15 +186,30 @@ export function adminRoutes({ config }) {
       latestChecks(business._id),
     ]);
     const verificationChecks = await Promise.all(checks.map(async (c) => reviewerView(c, await duplicatesOf(c))));
+    const submitted = await submittedDocuments(business);
     res.json({
       business: business.toJSON(),
       owner: ownerSummary(owner),
       verificationChecks,
+      // The documents the owner chose to show reviewers for verification (the document check).
+      verificationDocuments: submitted.documents.map(sharedView),
+      verificationDocumentsSharedAt: submitted.submission && submitted.documents.length > 0 ? submitted.submission.submittedAt : null,
       automatedChecksAvailable: verificationEnabled(config),
       referral: business.referral?.code
         ? { code: business.referral.code, agentId: agent ? String(agent._id) : null, agentName: agent?.fullName ?? null }
         : null,
     });
+  });
+
+  // A document the owner chose to show reviewers. Every download is written to the activity log.
+  router.get("/businesses/:id/documents/:docId", async (req, res) => {
+    const business = await Business.findById(parseId(req.params.id));
+    if (!business) throw new ApiError(404, "not_found", "Not found.");
+    const { documents } = await submittedDocuments(business);
+    const doc = documents.find((d) => String(d._id) === parseId(req.params.docId));
+    if (!doc) throw new ApiError(404, "not_found", "Not found.");
+    await audit(req.user, "document.download", `Downloaded "${doc.title}" (${doc.kind}) for verification of "${business.businessName}"`, { type: "business", id: business._id });
+    await sendDocument(res, doc);
   });
 
   // Manual review: the status shown on the owner's dashboard. Verified businesses receive their NMREP Business ID.

@@ -6,6 +6,8 @@
  * and each area says "N of M". The framework's own example documents are listed so an owner can see what is in the wallet.
  */
 
+import { documentKinds } from "../models/Document.js";
+
 const filled = (v) => (typeof v === "number" ? Number.isFinite(v) : typeof v === "string" ? v.trim() !== "" : false);
 
 const SECTIONS = [
@@ -18,8 +20,8 @@ const SECTIONS = [
 
 const DIGITAL = ["website", "facebook", "instagram", "x", "tiktok"];
 
-/** The framework's example wallet documents (section 15). "Other" is not listed: it has no meaning as a gap. */
-export const walletChecklist = ["CAC Certificate", "Tax Clearance", "Business Licence", "ID", "Bank Statement", "Audited Accounts"];
+/** Every kind of wallet document except "Other", which has no meaning as a gap. */
+export const walletChecklist = documentKinds.filter((k) => k !== "Other");
 
 const verifiedHint = {
   Unverified: "NMREP staff review businesses. A complete profile helps the review.",

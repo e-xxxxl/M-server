@@ -8,6 +8,8 @@ const notificationSchema = new mongoose.Schema({
   // A path inside the dashboard, for example /dashboard/applications/. Never an outside address.
   link: { type: String, default: "", maxlength: 120 },
   readAt: { type: Date, default: null },
+  // Set when it was sent as part of an administrator's broadcast.
+  broadcast: { type: mongoose.Schema.Types.ObjectId, ref: "Broadcast", default: undefined, index: true },
   createdAt: { type: Date, default: Date.now },
 });
 
@@ -18,39 +20,38 @@ notificationSchema.set("toJSON", {
     delete ret._id;
     delete ret.__v;
     delete ret.user;
+    delete ret.broadcast;
     return ret;
   },
 });
 
 export const Notification = mongoose.models.Notification ?? mongoose.model("Notification", notificationSchema);
 
-/** The kinds of notification that are also sent by email. New opportunity announcements stay in the app only. */
-const EMAILED = new Set(["application", "verification"]);
+/** The kinds of notification that are also sent by email. New opportunity announcements stay in the app (and the phone) only. */
+const EMAILED = new Set(["application", "verification", "opportunity", "announcement"]);
+/** The kinds whose text may travel in an email or a push: written by an administrator or about a programme, never a staff note. */
+const SHOWS_TEXT = new Set(["opportunity", "announcement", "payment"]);
 
 /**
- * Tells a user something, in the app and (for important changes, when email is set up) by email.
- * A failure here must never break the action that caused it.
+ * Tells a user something: in the app, on their phone (push) and, for the kinds above and when email is set up, by
+ * email. Owners can turn email and push off. `bulk` is for a message that goes to many people: its email goes through
+ * the batch queue. A failure here must never break the action that caused it.
  */
-export async function notify(userId, { type, title, body = "", link = "" }) {
+export async function notify(userId, { type, title, body = "", link = "" }, { bulk = false } = {}) {
+  let created;
   try {
-    await Notification.create({ user: userId, type, title, body, link });
+    created = await Notification.create({ user: userId, type, title, body, link });
   } catch (err) {
     console.error("Notification write failed:", err?.name);
     return;
   }
-  if (!EMAILED.has(type)) return;
   try {
-    // Imported here so the user and email code is only loaded when it is needed.
-    const [{ emailSettings, mailer }, { User }, { sendUpdate }] = await Promise.all([
-      import("../lib/mailer.js"),
-      import("./User.js"),
-      import("../lib/account-emails.js"),
-    ]);
-    if (!mailer.enabled || !emailSettings().notifications) return;
-    const user = await User.findById(userId).select("email fullName role active");
-    // The email carries the headline only. Staff notes and profile details stay behind the login.
-    if (user && user.active !== false && user.role === "msme_owner") sendUpdate(user, title);
+    // Imported here so the user, push and email code is only loaded when it is needed.
+    const [{ deliverPush }, { sendNotificationEmail }] = await Promise.all([import("../lib/push.js"), import("../lib/account-emails.js")]);
+    const text = SHOWS_TEXT.has(type) ? body : "";
+    await deliverPush([userId], { title, body: text, link, type, notificationId: String(created._id) });
+    if (EMAILED.has(type)) await sendNotificationEmail(userId, { title, body: text, link, bulk });
   } catch (err) {
-    console.error("Notification email failed:", err?.name);
+    console.error("Notification delivery failed:", err?.name);
   }
 }

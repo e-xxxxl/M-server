@@ -1,9 +1,9 @@
 import * as options from "../options.js";
-import { applicationStatuses, opportunityTypes } from "./opportunity-constants.js";
+import { applicationStatuses, maxOpportunityTags, opportunityTagGroups, opportunityTypes } from "./opportunity-constants.js";
 import { sharingCategories } from "./sharing.js";
 
 /** Bumped when a list changes in a way an app should notice. The app can cache the data and compare. */
-export const REFERENCE_VERSION = 1;
+export const REFERENCE_VERSION = 2;
 
 /** Every list the API accepts or returns, in one place. */
 export function referenceData() {
@@ -20,6 +20,8 @@ export function referenceData() {
     yesNo: options.yesNo,
     verificationStatuses: options.verificationStatuses,
     opportunityTypes,
+    opportunityTagGroups,
+    maxOpportunityTags,
     applicationStatuses,
     sharingCategories: Object.entries(sharingCategories).map(([key, c]) => ({ key, label: c.label, required: c.required, description: c.description })),
   };

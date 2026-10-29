@@ -1,7 +1,8 @@
 import mongoose from "mongoose";
 import { EmailToken } from "../models/EmailToken.js";
 import { hashToken, newToken } from "./crypto.js";
-import { accountDeletedEmail, passwordChangedEmail, resetPasswordEmail, updateEmail, verifyEmail } from "./email-templates.js";
+import { accountDeletedEmail, passwordChangedEmail, paymentReceiptEmail, resetPasswordEmail, updateEmail, verifyEmail } from "./email-templates.js";
+import { unsubscribeToken } from "./unsubscribe.js";
 import { emailSettings, mailer } from "./mailer.js";
 
 const HOUR = 60 * 60 * 1000;
@@ -52,7 +53,29 @@ export function sendPasswordChanged(user) {
   deliver(user, passwordChangedEmail(user, `${emailSettings().appUrl}/login/`));
 }
 
-/** A short heads-up for a notification. The details stay behind the login. */
-export function sendUpdate(user, title) {
-  deliver(user, updateEmail(user, title, `${emailSettings().appUrl}/dashboard/`));
+export function sendPaymentReceipt(user, { amount, reference, paidUntil }) {
+  deliver(user, paymentReceiptEmail(user, { amount, reference, paidUntil, url: `${emailSettings().appUrl}/dashboard/` }));
+}
+
+/**
+ * Emails an owner the headline of a notification, with a "Stop these emails" link. Skipped when email is off, when the
+ * owner turned notification emails off, or when the account is not an active owner. `bulk` sends through the batch
+ * queue (for a message that goes to many people). Returns true when a message was handed to the mailer.
+ */
+export async function sendNotificationEmail(userId, { title, body = "", link = "", bulk = false }) {
+  if (!mailer.enabled || !emailSettings().notifications) return false;
+  const { User } = await import("../models/User.js");
+  const user = await User.findById(userId).select("email fullName role active emailNotifications");
+  if (!user || user.active === false || user.role !== "msme_owner" || user.emailNotifications === false) return false;
+  const path = link.startsWith("/dashboard/") ? link : "/dashboard/";
+  const message = {
+    to: user.email,
+    ...updateEmail(user, title, `${emailSettings().appUrl}${path}`, {
+      body,
+      unsubscribeUrl: `${emailSettings().appUrl}/unsubscribe/#token=${unsubscribeToken(user._id)}`,
+    }),
+  };
+  if (bulk) mailer.queue(message);
+  else void mailer.send(message);
+  return true;
 }

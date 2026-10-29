@@ -17,6 +17,9 @@ import { User } from "../models/User.js";
 import { ApiError } from "../middleware/errors.js";
 import { requireAuth, requirePasswordChanged, requireRole } from "../middleware/security.js";
 import { idParamSchema } from "../schemas.js";
+import { normaliseQuestions } from "../lib/opportunity-form.js";
+import { businessBreakdowns, trainingStats } from "../lib/report-breakdowns.js";
+import { Payment } from "../models/Payment.js";
 import { trainingStaffRoutes } from "./training.js";
 import {
   applicationListQuerySchema,
@@ -58,9 +61,9 @@ export function adminOpportunityRoutes({ config }) {
 
   // ------------------------------------------------------------ opportunities
   router.get("/opportunities", async (req, res) => {
-    const { status } = opportunityListQuerySchema.parse(req.query);
+    const { status, archived } = opportunityListQuerySchema.parse(req.query);
     const [items, perStatus] = await Promise.all([
-      Opportunity.find(status ? { status } : {}).sort({ createdAt: -1 }).limit(200),
+      Opportunity.find({ ...(status ? { status } : {}), archivedAt: archived ? mongoose.trusted({ $ne: null }) : null }).sort({ createdAt: -1 }).limit(200),
       Application.aggregate([
         { $match: { status: { $ne: "Draft" } } },
         { $group: { _id: { opportunity: "$opportunity", status: "$status" }, count: { $sum: 1 } } },
@@ -85,7 +88,7 @@ export function adminOpportunityRoutes({ config }) {
 
   router.post("/opportunities", async (req, res) => {
     const data = opportunityCreateSchema.parse(req.body);
-    const opportunity = await Opportunity.create({ ...data, createdBy: req.user._id });
+    const opportunity = await Opportunity.create({ ...data, questions: normaliseQuestions(data.questions), createdBy: req.user._id });
     await audit(req.user, "opportunity.create", `Created opportunity "${opportunity.title}"`, { type: "opportunity", id: opportunity._id });
     res.status(201).json({ opportunity: opportunity.toJSON() });
   });
@@ -112,6 +115,7 @@ export function adminOpportunityRoutes({ config }) {
     if (!opportunity) throw new ApiError(404, "not_found", "Not found.");
 
     const { status, ...fields } = patch;
+    if (fields.questions) fields.questions = normaliseQuestions(fields.questions, opportunity.questions);
     Object.assign(opportunity, fields);
     if (status === "Open" && opportunity.status !== "Open") {
       await openOpportunity(opportunity); // saves, and tells qualifying owners the first time
@@ -305,6 +309,12 @@ export function adminOpportunityRoutes({ config }) {
       topReferrers: referrers,
       applicationsByStatus: named(appStatus),
       applicationsPerOpportunity: perOpportunity,
+      ...(await businessBreakdowns()),
+      training: await trainingStats(),
+      registrationFees: await (async () => {
+        const [row] = await Payment.aggregate([{ $match: { status: "success" } }, { $group: { _id: null, payments: { $sum: 1 }, kobo: { $sum: "$amountKobo" } } }]);
+        return { payments: row?.payments ?? 0, totalNaira: (row?.kobo ?? 0) / 100 };
+      })(),
     });
   });
 

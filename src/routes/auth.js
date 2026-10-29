@@ -10,11 +10,19 @@ import { burnPasswordCheck, hashPassword, hashToken, newToken, verifyPassword } 
 import { buildInsights } from "../lib/insights.js";
 import { ApiError } from "../middleware/errors.js";
 import { clearSessionCookie, isAppClient, readSessionToken, requireAuth, setSessionCookie } from "../middleware/security.js";
-import { forgotPasswordSchema, loginSchema, registerSchema, resetPasswordSchema, verifyEmailSchema } from "../schemas.js";
+import { forgotPasswordSchema, loginSchema, registerSchema, resetPasswordSchema, unsubscribeSchema, verifyEmailSchema } from "../schemas.js";
+import { registrationState } from "../lib/payments.js";
+import { phoneKey } from "../lib/phone-key.js";
+import { userIdFromUnsubscribeToken } from "../lib/unsubscribe.js";
 
 const emailTaken = () =>
   new ApiError(409, "email_taken", "An account with this email address already exists.", {
     "account.email": "An account with this email address already exists.",
+  });
+
+const phoneTaken = () =>
+  new ApiError(409, "phone_taken", "An account with this phone number already exists.", {
+    "account.phone": "An account with this phone number already exists.",
   });
 
 export function authRoutes({ config, limiters }) {
@@ -50,6 +58,7 @@ export function authRoutes({ config, limiters }) {
     applyComplianceRules(body.business, body.business, "business.");
 
     if (await User.exists({ email: account.email })) throw emailTaken();
+    if (await User.exists({ phoneKey: phoneKey(account.phone) })) throw phoneTaken();
 
     // An optional referral code must belong to an active agent. The registrant is told only that
     // the code is not valid, never whose it is or whether it was switched off.
@@ -88,19 +97,30 @@ export function authRoutes({ config, limiters }) {
 
     const extra = await startSession(req, res, user._id);
     await sendVerification(user); // queues the "confirm your email" message, never blocks sign-up on the mail service
-    res.status(201).json({ user, business, insights: buildInsights(business), ...extra });
+    res.status(201).json({ user, business, insights: buildInsights(business), registration: registrationState(user, config), ...extra });
   });
 
   router.post("/login", limiters.login, async (req, res) => {
-    const { email, password } = loginSchema.parse(req.body);
+    const { identifier, email, password } = loginSchema.parse(req.body);
+    const given = (identifier ?? email).trim();
     const failure = () =>
       new ApiError(
         401,
         "invalid_credentials",
-        "Incorrect email or password. After several failed attempts an account is locked for a short time.",
+        "Incorrect email, phone number or password. After several failed attempts an account is locked for a short time.",
       );
 
-    const user = await User.findOne({ email }).select("+passwordHash +failedLogins +lockUntil");
+    // An email address has an "@". Anything else is read as a phone number, which must belong to exactly one account.
+    let user = null;
+    if (given.includes("@")) {
+      user = await User.findOne({ email: given.toLowerCase() }).select("+passwordHash +failedLogins +lockUntil");
+    } else {
+      const key = phoneKey(given);
+      if (key.length >= 7) {
+        const matches = await User.find({ phoneKey: key }).select("+passwordHash +failedLogins +lockUntil").limit(2);
+        if (matches.length === 1) user = matches[0];
+      }
+    }
     if (!user) {
       await burnPasswordCheck(password, config.bcryptRounds);
       throw failure();
@@ -133,7 +153,7 @@ export function authRoutes({ config, limiters }) {
 
     const extra = await startSession(req, res, user._id);
     const business = await Business.findOne({ owner: user._id });
-    res.json({ user, business, insights: business ? buildInsights(business) : null, ...extra });
+    res.json({ user, business, insights: business ? buildInsights(business) : null, registration: registrationState(user, config), ...extra });
   });
 
   // Always the same answer, whether or not the email belongs to an account, so this cannot be used to find out who is registered.
@@ -189,7 +209,16 @@ export function authRoutes({ config, limiters }) {
 
   router.get("/me", requireAuth(config), (req, res) => {
     // For the app, also the session's current expiry (it moves forward while the app is used).
-    res.json({ user: req.user, ...(req.tokenExpiresAt ? { tokenExpiresAt: req.tokenExpiresAt } : {}) });
+    res.json({ user: req.user, registration: registrationState(req.user, config), ...(req.tokenExpiresAt ? { tokenExpiresAt: req.tokenExpiresAt } : {}) });
+  });
+
+  // The "Stop these emails" link in a notification email. No sign-in needed: the token proves which account it is for.
+  router.post("/unsubscribe", limiters.reset, async (req, res) => {
+    const { token } = unsubscribeSchema.parse(req.body);
+    const id = userIdFromUnsubscribeToken(token);
+    if (!id) throw new ApiError(400, "invalid_token", "This link is not valid.");
+    await User.updateOne({ _id: id }, { $set: { emailNotifications: false } });
+    res.json({ ok: true });
   });
 
   return router;

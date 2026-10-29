@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import { criterionKeys } from "../lib/eligibility.js";
-import { criterionLevels, opportunityStatuses, opportunityTypes, trainingModes } from "../lib/opportunity-constants.js";
+import { criterionLevels, opportunityStatuses, opportunityTags, opportunityTypes, trainingModes } from "../lib/opportunity-constants.js";
+import { documentKinds } from "./Document.js";
 
 const criterionSchema = new mongoose.Schema(
   {
@@ -9,6 +10,8 @@ const criterionSchema = new mongoose.Schema(
     values: { type: [String], default: undefined },
     min: { type: Number },
     max: { type: Number },
+    // Requirements with the same group number are alternatives (OR). See lib/eligibility.js.
+    group: { type: Number, min: 1, max: 5 },
   },
   { _id: false },
 );
@@ -49,6 +52,17 @@ const opportunitySchema = new mongoose.Schema(
     // The reason an opportunity was sent back to its partner.
     reviewNote: { type: String, maxlength: 200, default: "" },
     criteria: { type: [criterionSchema], default: [] },
+    // Categories on top of the type (see opportunityTags). Opportunities made before tags existed have none.
+    tags: { type: [{ type: String, enum: opportunityTags }], default: [] },
+    // Kinds of wallet document the applicant must attach to submit (see documentKinds, never "Other").
+    requiredDocuments: { type: [{ type: String, enum: documentKinds.filter((k) => k !== "Other") }], default: [] },
+    // Questions the applicant answers when applying. Each has a real _id so answers stay tied to it when the text is edited.
+    questions: {
+      type: [new mongoose.Schema({ text: { type: String, required: true, trim: true, maxlength: 200 }, required: { type: Boolean, default: false } })],
+      default: [],
+    },
+    // Set when an administrator archives it: hidden from the default lists, never shown to owners.
+    archivedAt: { type: Date, default: null },
     // Only for type Training. Null until the provider fills in the plan.
     training: { type: trainingSchema, default: null },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
@@ -61,6 +75,8 @@ const opportunitySchema = new mongoose.Schema(
         ret.id = String(ret._id);
         ret.createdBy = String(ret.createdBy);
         ret.organisation = ret.organisation ? String(ret.organisation) : null;
+        ret.questions = (ret.questions ?? []).map((q) => ({ id: String(q._id), text: q.text, required: q.required }));
+        ret.requiredDocuments = ret.requiredDocuments ?? [];
         if (ret.training) ret.training.sessions = (ret.training.sessions ?? []).map((s) => ({ id: String(s._id), title: s.title, on: s.on }));
         else ret.training = null;
         delete ret._id;

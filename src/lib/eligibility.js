@@ -7,6 +7,10 @@ import * as o from "../options.js";
  *
  * Kinds: "set" (the business value must be one of the listed values), "min" and "range" (numbers),
  * "yes" (the Yes or No answer must be Yes) and "verified" (the business must be verified).
+ *
+ * OR groups: requirements that share a `group` number are alternatives. The group is met when ANY one of them is met,
+ * and it counts as ONE requirement in "N of M met" and in the label. Every member of a group has the same level.
+ * Requirements without a group are all needed (AND), as before.
  */
 const yearsIn = (business, now) => (Number.isFinite(business.yearEstablished) ? Math.max(0, now.getFullYear() - business.yearEstablished) : null);
 
@@ -69,16 +73,28 @@ export function evaluate(criteria, business, now = new Date()) {
       key: c.key,
       label: spec.label,
       level: c.level,
+      group: c.group ?? null,
       requirement: requirementText(spec, c),
       yours: shown(spec, spec.read(business, now)),
       met: isMet(spec, c, business, now),
     };
   });
-  const required = checks.filter((c) => c.level === "required");
-  const requiredMissing = required.filter((c) => !c.met).length;
-  const met = checks.filter((c) => c.met).length;
+  // One unit per ungrouped requirement and one per OR group (met when any member is met).
+  const units = [];
+  const groups = new Map();
+  for (const c of checks) {
+    if (c.group === null) units.push({ level: c.level, met: c.met });
+    else if (groups.has(c.group)) groups.get(c.group).met ||= c.met;
+    else {
+      const unit = { level: c.level, met: c.met };
+      groups.set(c.group, unit);
+      units.push(unit);
+    }
+  }
+  const requiredMissing = units.filter((u) => u.level === "required" && !u.met).length;
+  const met = units.filter((u) => u.met).length;
   const label = requiredMissing === 0 ? "Eligible" : requiredMissing <= NEARLY_LIMIT ? "Nearly eligible" : "Not eligible";
-  return { checks, met, total: checks.length, requiredMissing, label };
+  return { checks, met, total: units.length, requiredMissing, label };
 }
 
 const labelRank = { Eligible: 0, "Nearly eligible": 1, "Not eligible": 2 };

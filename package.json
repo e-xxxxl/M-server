@@ -9,6 +9,8 @@
   },
   "main": "src/server.js",
   "scripts": {
+    "document-key": "node scripts/create-document-key.js",
+    "prembly-check": "node scripts/prembly-check.js",
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "dev:memory": "node scripts/dev-memory.js",

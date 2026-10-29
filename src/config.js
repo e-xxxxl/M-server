@@ -52,6 +52,30 @@ export function loadConfig(env = process.env) {
       reset: Number(env.RATE_LIMIT_RESET ?? 10),
     },
     bcryptRounds: Number(env.BCRYPT_ROUNDS ?? 12),
+    // The yearly registration fee, paid through Paystack. Without PAYSTACK_SECRET_KEY the fee is off and nobody is asked
+    // to pay. Use a test key (sk_test_...) while testing: it takes test cards and no real money.
+    payments: {
+      secretKey: env.PAYSTACK_SECRET_KEY ?? "",
+      baseUrl: (env.PAYSTACK_BASE_URL ?? "https://api.paystack.co").replace(/\/+$/, ""),
+      enabled: Boolean(env.PAYSTACK_SECRET_KEY),
+      registrationFeeNaira: Number(env.REGISTRATION_FEE_NAIRA ?? 1000),
+      // How long one payment keeps the registration valid.
+      periodDays: Number(env.REGISTRATION_PERIOD_DAYS ?? 365),
+    },
+    // Push notifications to the phone app through Expo. On by default: with no registered phones nothing is sent.
+    push: {
+      enabled: env.PUSH_ENABLED !== "false",
+      accessToken: env.EXPO_ACCESS_TOKEN ?? "",
+    },
+    notifications: {
+      // Signs the "stop these emails" links. Set a long random value on a real server.
+      unsubscribeSecret: env.UNSUBSCRIBE_SECRET ?? "",
+    },
+    // The reminder job (programmes closing soon, training sessions tomorrow). Runs inside the API process.
+    reminders: {
+      enabled: env.REMINDERS_ENABLED !== "false",
+      intervalMinutes: Number(env.REMINDERS_INTERVAL_MINUTES ?? 60),
+    },
     // Automated identity and business checks through Prembly (NIN, BVN, CAC, TIN). Server side only. Without both
     // PREMBLY_API_KEY and VERIFICATION_HASH_KEY the feature is off and everything else still works.
     verification: {
@@ -63,6 +87,8 @@ export function loadConfig(env = process.env) {
       // Every provider call can cost money, so each type of check is limited per business per rolling 24 hours.
       maxPerTypePerDay: Number(env.VERIFICATION_MAX_PER_TYPE_PER_DAY ?? 3),
       maxPerDay: Number(env.VERIFICATION_MAX_PER_DAY ?? 8),
+      // Prembly's test mode answers with made up data ("is_sandbox": true). Allowed everywhere except production.
+      allowSandbox: nodeEnv !== "production",
     },
     // The document wallet. Files are encrypted (AES-256-GCM) before they are written to a private folder on this
     // server. Without a 32 byte key (base64) the wallet is off and everything else still works.

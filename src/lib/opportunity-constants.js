@@ -3,6 +3,25 @@
 
 export const opportunityTypes = ["Funding", "Grant", "Loan", "Training", "Support"];
 
+/**
+ * Categories from the framework (section 8), as tags on top of the type: an opportunity has one type and up to
+ * `maxOpportunityTags` tags. Funding, grants, loans and training are types, so they are not repeated here.
+ */
+export const opportunityTagGroups = [
+  { group: "Funding", tags: ["Equity", "Equipment financing"] },
+  { group: "Skills and growth", tags: ["Digital marketing", "Accounting", "Export", "Leadership", "Technology"] },
+  { group: "Government programmes", tags: ["MSME support", "Sector programme", "State programme"] },
+  { group: "Business services", tags: ["Legal", "Logistics", "Insurance"] },
+];
+export const opportunityTags = opportunityTagGroups.flatMap((g) => g.tags);
+export const maxOpportunityTags = 5;
+
+/** Documents an opportunity can ask for (every wallet kind except "Other"), and the most it can ask for. */
+export const maxRequiredDocuments = 6;
+/** Questions an opportunity can ask the applicant, and the longest answer. */
+export const maxQuestions = 8;
+export const maxAnswerLength = 500;
+
 /** Pending Approval is set only when a partner submits an opportunity for NMREP to approve. */
 export const opportunityStatuses = ["Draft", "Pending Approval", "Open", "Closed"];
 /** What a platform admin can set directly on the edit form. */

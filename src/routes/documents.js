@@ -5,9 +5,11 @@ import { documentStorage } from "../lib/document-storage.js";
 import { kindsInfo, ownerView, readUpload, sendDocument, sharesOf, sniffMime } from "../lib/documents.js";
 import { Application } from "../models/Application.js";
 import { Business } from "../models/Business.js";
+import { VerificationSubmission } from "../models/VerificationSubmission.js";
 import { ConsentRecord } from "../models/ConsentRecord.js";
 import { Document, documentKinds } from "../models/Document.js";
 import { ApiError } from "../middleware/errors.js";
+import { requirePaidRegistration } from "../middleware/paid.js";
 import { requireAuth, requireRole } from "../middleware/security.js";
 import { idParamSchema, oneOf, optionalText } from "../schemas.js";
 
@@ -22,7 +24,7 @@ const uploadFieldsSchema = z.object({ kind: oneOf(documentKinds), title: optiona
 /** The owner's document wallet: list, upload, download and delete. */
 export function documentRoutes({ config }) {
   const router = Router();
-  router.use(requireAuth(config), requireRole("msme_owner"));
+  router.use(requireAuth(config), requireRole("msme_owner"), requirePaidRegistration(config));
   const limits = () => ({
     maxFileMb: Math.floor(config.documents.maxFileBytes / (1024 * 1024)),
     maxFiles: config.documents.maxFiles,
@@ -93,6 +95,7 @@ export function documentRoutes({ config }) {
     // A deleted document can no longer be seen by anyone it was shared with.
     await Application.updateMany({ owner: req.user._id }, { $pull: { documents: doc._id } });
     await ConsentRecord.updateMany({ owner: req.user._id }, { $pull: { documents: doc._id } });
+    await VerificationSubmission.updateMany({ owner: req.user._id }, { $pull: { documents: doc._id } });
     res.status(204).end();
   });
 

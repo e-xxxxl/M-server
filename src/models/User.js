@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { phoneKey } from "../lib/phone-key.js";
 
 export const roles = ["msme_owner", "admin", "super_admin", "partner"];
 
@@ -7,6 +8,8 @@ const userSchema = new mongoose.Schema(
     fullName: { type: String, required: true, trim: true, maxlength: 100 },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true, maxlength: 254 },
     phone: { type: String, required: true, trim: true, maxlength: 20 },
+    // The phone number as digits in one shape (see lib/phone.js). Lets someone sign in with their number.
+    phoneKey: { type: String, default: "", index: true },
     // Never returned by default. Only the login and password-change routes select it explicitly.
     passwordHash: { type: String, required: true, select: false },
     // Set only by the server: owners register themselves, admins are created by a super admin,
@@ -25,6 +28,11 @@ const userSchema = new mongoose.Schema(
     termsAcceptedAt: { type: Date, default: null },
     // Set when the person opens the link in the confirmation email.
     emailVerifiedAt: { type: Date, default: null },
+    // The yearly registration fee: the day the paid registration ends. null = never paid.
+    registrationPaidUntil: { type: Date, default: null },
+    // Whether to email and push notifications. Owners can turn either off; the in-app list always has them.
+    emailNotifications: { type: Boolean, default: true },
+    pushNotifications: { type: Boolean, default: true },
   },
   {
     timestamps: true,
@@ -39,10 +47,16 @@ const userSchema = new mongoose.Schema(
         delete ret.failedLogins;
         delete ret.lockUntil;
         delete ret.createdBy;
+        delete ret.phoneKey;
         return ret;
       },
     },
   },
 );
+
+// Keep the phone key in step with the phone number.
+userSchema.pre("validate", function setPhoneKey() {
+  if (this.isModified("phone") || !this.phoneKey) this.phoneKey = phoneKey(this.phone);
+});
 
 export const User = mongoose.models.User ?? mongoose.model("User", userSchema);

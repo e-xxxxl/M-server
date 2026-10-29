@@ -14,6 +14,11 @@ const applicationSchema = new mongoose.Schema(
     // Documents from the owner's wallet that were attached when this was submitted. Only visible to the
     // organisation while the sharing agreement for this application is active (see ConsentRecord).
     documents: { type: [mongoose.Schema.Types.ObjectId], default: [] },
+    // The applicant's answers to the opportunity's questions. The question text is copied so later edits do not change it.
+    answers: {
+      type: [{ _id: false, question: { type: mongoose.Schema.Types.ObjectId, required: true }, text: { type: String, default: "" }, answer: { type: String, trim: true, maxlength: 500, default: "" } }],
+      default: [],
+    },
     history: [
       {
         _id: false,
@@ -32,6 +37,7 @@ const applicationSchema = new mongoose.Schema(
         ret.business = String(ret.business);
         ret.owner = String(ret.owner);
         ret.documents = (ret.documents ?? []).map(String);
+        ret.answers = (ret.answers ?? []).map((a) => ({ questionId: String(a.question), question: a.text, answer: a.answer }));
         delete ret._id;
         delete ret.__v;
         return ret;

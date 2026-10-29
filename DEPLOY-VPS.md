@@ -610,7 +610,7 @@ It prints `Resend accepted the message`. Check your inbox and your spam folder. 
 
 Owners can check their NIN, BVN, CAC number and TIN from **Verification** in their dashboard. This is **off** until you add two settings, and manual review works without it. Every provider call can cost money, so create the Prembly account first, fund the wallet only with what you are happy to spend, and read the limits below.
 
-1. In the Prembly dashboard create a **live** API key for the services NIN, BVN, CAC and TIN. Copy it into your password manager. Prembly does not publish a separate test host, so every call is real and billed.
+1. In the Prembly dashboard create an API key for the services NIN, BVN, CAC and TIN. Copy it into your password manager. Prembly has a **test mode** (a switch in its dashboard): the same address and the same paths, with a test key (it starts with `test_`). In test mode every call succeeds with made up data, nothing is billed, and the answer says `"is_sandbox": true`. Use it on your own computer and on a test server. **The production server must use the live key**: if it receives a test mode answer it logs "answered in sandbox mode" and treats the check as unavailable, so made up data is never recorded as a real check. To try the test key, put it in `backend/.env` on your computer and run `npm run prembly-check` (it prints only the shape of each answer, never the key or any values).
 2. Create the fingerprint secret on the server (it is not a password you need to remember, but **keep a copy in your password manager and never change it**, or earlier fingerprints stop matching):
 
    ```bash
@@ -642,10 +642,10 @@ What the owner and the platform do:
 
 Owners can keep documents (CAC certificate, licences, and so on) in **Documents** and attach chosen ones to an application. It is **off** until you set a key. Files never go to a third party: they are encrypted on this server and stored in a private folder.
 
-1. Create the key on your own computer or on the server (it prints once; **keep a copy in your password manager, separately from the backups**):
+1. Create the key (it only prints, it writes nothing; **keep a copy in your password manager, separately from the backups**):
 
    ```bash
-   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+   cd /opt/nmrep/current/backend && npm run document-key
    ```
 
 2. Add to `/opt/nmrep/shared/.env` (no spaces, no quotes):

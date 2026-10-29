@@ -12,7 +12,12 @@
  * Provider documentation used (docs.prembly.com): NIN basic POST /verification/vnin-basic, BVN basic POST
  * /verification/bvn_validation, CAC basic POST /verification/cac/basic, TIN POST /verification/tin. A request is
  * authenticated with the header x-api-key. A hit is HTTP 200 with status true and response_code "00". The
- * documentation does not describe failure responses or a sandbox, so anything that is not a hit counts as "not found".
+ * documentation does not describe failure responses, so anything that is not a hit counts as "not found".
+ *
+ * Sandbox: Prembly has a test mode, switched on in its dashboard, that uses the same address with a test key. In it
+ * every request "succeeds" with made up data and the response says "is_sandbox": true. That is fine for development
+ * but must never be mistaken for a real check, so unless cfg.allowSandbox is true (it is false in production) a
+ * sandbox answer counts as "unavailable".
  */
 
 const TIMEOUT_MS = 20_000;
@@ -34,6 +39,11 @@ export function createPrembly(cfg, { fetchImpl = fetch, log = console } = {}) {
       const json = await res.json().catch(() => null);
 
       // Our own key or wallet is the problem: log the status only (never the body) and report "unavailable".
+      // A test mode answer is made up data. In production it is refused, so no check is ever recorded from it.
+      if (json?.is_sandbox === true && !cfg.allowSandbox) {
+        log.error("Verification provider answered in sandbox mode. Switch the Prembly account to live mode, or use the live key.");
+        return { unavailable: true };
+      }
       if ([401, 402, 403].includes(res.status)) {
         log.error(`Verification provider refused the request: HTTP ${res.status}. Check PREMBLY_API_KEY and the wallet balance.`);
         return { unavailable: true };

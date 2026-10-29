@@ -6,10 +6,16 @@ import {
   assessmentResults,
   trainingModes,
   criterionLevels,
+  maxAnswerLength,
+  maxOpportunityTags,
+  maxQuestions,
+  maxRequiredDocuments,
   organisationTypesAvailable,
+  opportunityTags,
   opportunityTypes,
   reviewableStatuses,
 } from "./lib/opportunity-constants.js";
+import { documentKinds } from "./models/Document.js";
 import { blankToUndefined, emailSchema, intInRange, objectId, oneOf, optionalText, phoneSchema, text } from "./schemas.js";
 
 /** Validation for opportunities, applications and notifications. Every schema is strict. */
@@ -25,37 +31,53 @@ const criterionSchema = z
     values: z.array(z.string().max(100)).max(40).optional(),
     min: intOpt(100000).optional(),
     max: intOpt(100000).optional(),
+    // A number from 1 to 5. Requirements that share a number are alternatives: meeting any one of them is enough.
+    group: z.number({ message: "Enter a whole number." }).int("Enter a whole number.").min(1, "Use a group from 1 to 5.").max(5, "Use a group from 1 to 5.").nullable().optional(),
   })
   .strict()
   .transform((c, ctx) => {
     const spec = criterionKinds[c.key];
     const fail = (path, message) => ctx.addIssue({ code: "custom", path: [path], message });
+    const base = { key: c.key, level: c.level, ...(c.group ? { group: c.group } : {}) };
     if (spec.kind === "set") {
       const values = [...new Set(c.values ?? [])];
       if (values.length === 0) fail("values", "Choose at least one option.");
       else if (values.some((v) => !spec.options.includes(v))) fail("values", "Choose from the listed options.");
-      return { key: c.key, level: c.level, values };
+      return { ...base, values };
     }
     if (spec.kind === "min") {
       if (c.min === undefined) fail("min", "Enter the minimum.");
       else if (c.min > spec.max) fail("min", `Enter ${spec.max} or less.`);
-      return { key: c.key, level: c.level, min: c.min };
+      return { ...base, min: c.min };
     }
     if (spec.kind === "range") {
       if (c.min === undefined && c.max === undefined) fail("min", "Enter a minimum, a maximum, or both.");
       else if (c.min !== undefined && c.max !== undefined && c.min > c.max) fail("max", "The maximum must not be below the minimum.");
-      const out = { key: c.key, level: c.level };
+      const out = { ...base };
       if (c.min !== undefined) out.min = c.min;
       if (c.max !== undefined) out.max = c.max;
       return out;
     }
-    return { key: c.key, level: c.level }; // "yes" and "verified" need nothing more
+    return base; // "yes" and "verified" need nothing more
   });
 
 const criteriaList = z
   .array(criterionSchema)
   .max(20, "Use 20 requirements or fewer.")
-  .refine((list) => new Set(list.map((c) => c.key)).size === list.length, "Each requirement can be added only once.");
+  .refine((list) => new Set(list.map((c) => c.key)).size === list.length, "Each requirement can be added only once.")
+  .superRefine((list, ctx) => {
+    // An OR group needs at least two alternatives, and the alternatives share one level.
+    const byGroup = new Map();
+    list.forEach((c, i) => {
+      if (c.group) byGroup.set(c.group, [...(byGroup.get(c.group) ?? []), { c, i }]);
+    });
+    for (const [group, members] of byGroup) {
+      if (members.length < 2) ctx.addIssue({ code: "custom", path: [members[0].i, "group"], message: `Group ${group} needs at least two requirements to choose from.` });
+      else if (new Set(members.map((m) => m.c.level)).size > 1) {
+        ctx.addIssue({ code: "custom", path: [members[0].i, "group"], message: `All requirements in group ${group} must be Required, or all Preferred.` });
+      }
+    }
+  });
 
 /** A date such as 2027-01-31, kept as the end of that day in Nigeria (23:59 West Africa Time, which is 22:59 UTC). Empty or null means no deadline. */
 const deadlineSchema = z.union([
@@ -94,6 +116,21 @@ const opensOnSchema = z.union([
 /** How many applications can be approved. Empty means no limit. */
 const limitSchema = z.union([z.literal("").transform(() => null), z.null(), intInRange(1, 1000000)]);
 
+/** Up to five categories, each listed once. */
+const tagsSchema = z
+  .array(oneOf(opportunityTags))
+  .max(maxOpportunityTags, `Choose ${maxOpportunityTags} categories or fewer.`)
+  .transform((tags) => [...new Set(tags)]);
+
+const requiredDocumentsSchema = z
+  .array(oneOf(documentKinds.filter((k) => k !== "Other")))
+  .max(maxRequiredDocuments, `Ask for ${maxRequiredDocuments} documents or fewer.`)
+  .transform((kinds) => [...new Set(kinds)]);
+
+const questionsSchema = z
+  .array(z.object({ id: objectId.optional(), text: text(200), required: z.boolean({ message: "Choose yes or no." }).default(false) }).strict())
+  .max(maxQuestions, `Ask ${maxQuestions} questions or fewer.`);
+
 const shape = {
   title: text(120),
   provider: text(120),
@@ -103,9 +140,12 @@ const shape = {
   opensOn: opensOnSchema,
   beneficiaryLimit: limitSchema,
   criteria: criteriaList,
+  tags: tagsSchema,
+  requiredDocuments: requiredDocumentsSchema,
+  questions: questionsSchema,
 };
 
-const optionalDefaults = { deadline: deadlineSchema.default(null), opensOn: opensOnSchema.default(null), beneficiaryLimit: limitSchema.default(null), criteria: criteriaList.default([]) };
+const optionalDefaults = { deadline: deadlineSchema.default(null), opensOn: opensOnSchema.default(null), beneficiaryLimit: limitSchema.default(null), criteria: criteriaList.default([]), tags: tagsSchema.default([]), requiredDocuments: requiredDocumentsSchema.default([]), questions: questionsSchema.default([]) };
 
 /** Platform admins write the provider name themselves. */
 export const opportunityCreateSchema = z.object({ ...shape, ...optionalDefaults }).strict();
@@ -170,12 +210,19 @@ export const applicationSaveSchema = z
     consent: consentSchema.optional(),
     // Documents from the wallet to attach when submitting. Needs consent.documents.
     documentIds: z.array(objectId).max(10, "Attach 10 documents or fewer.").default([]),
+    // Answers to the opportunity's questions. Leave it out to keep the answers already saved.
+    answers: z.array(z.object({ questionId: objectId, answer: optionalText(maxAnswerLength) }).strict()).max(maxQuestions).optional(),
   })
   .strict();
 
 export const applicationStatusSchema = z.object({ status: oneOf(applicationStatuses), note: text(200) }).strict();
 
-export const opportunityQuerySchema = z.object({ type: z.preprocess(blankToUndefined, oneOf(opportunityTypes).optional()) }).strict();
+export const opportunityQuerySchema = z
+  .object({
+    type: z.preprocess(blankToUndefined, oneOf(opportunityTypes).optional()),
+    tag: z.preprocess(blankToUndefined, oneOf(opportunityTags).optional()),
+  })
+  .strict();
 
 export const applicationListQuerySchema = z
   .object({
@@ -187,7 +234,11 @@ export const applicationListQuerySchema = z
   .strict();
 
 export const opportunityListQuerySchema = z
-  .object({ status: z.preprocess(blankToUndefined, oneOf(["Draft", "Pending Approval", "Open", "Closed"]).optional()) })
+  .object({
+    status: z.preprocess(blankToUndefined, oneOf(["Draft", "Pending Approval", "Open", "Closed"]).optional()),
+    // "true" lists the archive instead of the live opportunities.
+    archived: z.preprocess(blankToUndefined, z.literal("true").optional()),
+  })
   .strict();
 
 export const notificationReadSchema = z.object({ ids: z.array(objectId).max(100).optional() }).strict();

@@ -1,8 +1,24 @@
 import mongoose from "mongoose";
 
-/** What a document is. The first six are the framework's own examples. "ID" and "Bank Statement" are sensitive. */
-export const documentKinds = ["CAC Certificate", "Tax Clearance", "Business Licence", "ID", "Bank Statement", "Audited Accounts", "Other"];
-export const sensitiveKinds = ["ID", "Bank Statement"];
+/**
+ * What a document is: the nine of the Data Collection Modules (CAC certificate, TIN certificate, tax clearance, utility
+ * bill, bank statement, means of identification, business plan, product catalog, audited accounts) plus the framework's
+ * business licence, and "Other". "ID", "Bank Statement" and "Utility Bill" (it shows a home address) are sensitive.
+ */
+export const documentKinds = [
+  "CAC Certificate",
+  "TIN Certificate",
+  "Tax Clearance",
+  "Business Licence",
+  "ID",
+  "Utility Bill",
+  "Bank Statement",
+  "Business Plan",
+  "Product Catalog",
+  "Audited Accounts",
+  "Other",
+];
+export const sensitiveKinds = ["ID", "Bank Statement", "Utility Bill"];
 
 /**
  * One document in an owner's wallet. The file itself is not in the database: it is encrypted and stored in a private

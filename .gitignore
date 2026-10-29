@@ -8,3 +8,6 @@
 .DS_Store
 /.dev-db
 npm-debug.log*
+
+# Local document wallet files (encrypted, but still never commit them)
+/storage

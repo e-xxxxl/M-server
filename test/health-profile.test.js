@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
-import { buildHealthProfile } from "../src/lib/health-profile.js";
+import { buildHealthProfile, walletChecklist } from "../src/lib/health-profile.js";
 import { createDocumentStorage, setDocumentStorage } from "../src/lib/document-storage.js";
 import { client, ORIGIN, registrationBody, startTestServer } from "./helpers.js";
 import { createStaff, logIn } from "./staff-helpers.js";
@@ -104,7 +104,7 @@ describe("the health profile", () => {
     const o = await owner();
     let hp = (await call("GET", "/api/health-profile", { cookie: o.cookie })).json;
     assert.equal(area(hp, "documents").done, 0);
-    assert.equal(area(hp, "documents").total, 6);
+    assert.equal(area(hp, "documents").total, 10);
     assert.equal(area(hp, "documents").status, "To do");
     await addDocument(o, "CAC Certificate");
     await addDocument(o, "Other");
@@ -140,7 +140,7 @@ describe("the health profile", () => {
         state: "Lagos", lga: "L", city: "C", address: "A", ownerName: "O", ownerRole: "R", ownershipStructure: "Sole owner", employees: 3, branches: 0,
         annualRevenue: "R", existingLoans: "No", bankName: "B", fundingNeeds: "F", website: "w.com", verificationStatus: "Verified", nmrepId: "NMREP-2026-000001",
       },
-      ["CAC Certificate", "Tax Clearance", "Business Licence", "ID", "Bank Statement", "Audited Accounts"],
+      walletChecklist,
     );
     assert.ok(hp.areas.every((a) => a.status === "Complete" && a.done === a.total));
     assert.deepEqual(hp.nextSteps, []);

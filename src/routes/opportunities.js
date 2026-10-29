@@ -1,6 +1,7 @@
 import { Router } from "express";
 import mongoose from "mongoose";
 import { compareFit, evaluate } from "../lib/eligibility.js";
+import { openOpportunitiesFor, organisationActive } from "../lib/open-opportunities.js";
 import { editable, withdrawable } from "../lib/opportunity-constants.js";
 import { categoryKeys, describeSharing, sharingCategories } from "../lib/sharing.js";
 import { profileFieldNames, idParamSchema } from "../schemas.js";
@@ -13,6 +14,7 @@ import { Notification } from "../models/Notification.js";
 import { Opportunity } from "../models/Opportunity.js";
 import { Organisation } from "../models/Organisation.js";
 import { ApiError } from "../middleware/errors.js";
+import { requirePaidRegistration } from "../middleware/paid.js";
 import { requireAuth, requireRole } from "../middleware/security.js";
 
 /** A malformed id is simply "not found". */
@@ -27,6 +29,7 @@ const publicOpportunity = (opportunity) => {
   const json = opportunity.toJSON();
   delete json.createdBy;
   delete json.organisation;
+  delete json.archivedAt; // an admin's housekeeping, not for owners
   return json;
 };
 
@@ -45,16 +48,15 @@ async function organisationOf(opportunity) {
   return opportunity.organisation ? Organisation.findById(opportunity.organisation).select("name active").lean() : null;
 }
 
-/** An opportunity of a switched-off organisation is not shown and does not accept applications. */
-const organisationActive = (org) => !org || org.active;
-
 /** What owners can do with opportunities, their applications, their consents and their notifications. */
 export function opportunityRoutes({ config }) {
   const opportunities = Router();
   const applications = Router();
   const notifications = Router();
   const consents = Router();
-  for (const r of [opportunities, applications, notifications, consents]) r.use(requireAuth(config), requireRole("msme_owner"));
+  for (const r of [opportunities, applications, consents]) r.use(requireAuth(config), requireRole("msme_owner"), requirePaidRegistration(config));
+  // Notifications stay open to an owner who has not paid yet, so they can read the message about the fee.
+  notifications.use(requireAuth(config), requireRole("msme_owner"));
 
   const ownBusiness = async (req) => {
     const business = await Business.findOne({ owner: req.user._id });
@@ -64,26 +66,21 @@ export function opportunityRoutes({ config }) {
 
   // ------------------------------------------------------------ opportunities
   opportunities.get("/", async (req, res) => {
-    const { type } = opportunityQuerySchema.parse(req.query);
+    const { type, tag } = opportunityQuerySchema.parse(req.query);
     const business = await ownBusiness(req);
-    const now = new Date();
-    const open = await Opportunity.find(type ? { status: "Open", type } : { status: "Open" });
-    const orgRows = await Organisation.find({ _id: mongoose.trusted({ $in: open.map((o) => o.organisation).filter(Boolean) }) }).select("name active").lean();
-    const orgs = new Map(orgRows.map((o) => [String(o._id), o]));
-    const visible = open.filter((o) => o.isAcceptingApplications(now) && organisationActive(o.organisation ? orgs.get(String(o.organisation)) : null));
-    const mine = await Application.find({ owner: req.user._id, opportunity: mongoose.trusted({ $in: visible.map((o) => o._id) }) }).select("opportunity status");
-    const statusOf = new Map(mine.map((a) => [String(a.opportunity), a.status]));
-
-    const items = visible
-      .map((o) => ({
+    const found = await openOpportunitiesFor(business, req.user._id, { filter: { ...(type ? { type } : {}), ...(tag ? { tags: tag } : {}) } });
+    const items = found
+      .map(({ opportunity: o, organisationName, fit, applicationStatus }) => ({
         id: String(o._id),
         title: o.title,
         provider: o.provider,
-        organisationName: o.organisation ? (orgs.get(String(o.organisation))?.name ?? null) : null,
+        organisationName,
+        summary: o.description.replace(/\s+/g, " ").trim().slice(0, 160),
         type: o.type,
+        tags: o.tags,
         deadline: o.deadline,
-        fit: evaluate(o.criteria, business, now),
-        applicationStatus: statusOf.get(String(o._id)) ?? null,
+        fit,
+        applicationStatus,
       }))
       .sort(compareFit)
       .map((o) => ({ ...o, fit: fitSummary(o.fit) }));
@@ -101,8 +98,11 @@ export function opportunityRoutes({ config }) {
     const org = await organisationOf(opportunity);
     if (!organisationActive(org) && !application) throw new ApiError(404, "not_found", "Not found.");
     const business = await ownBusiness(req);
+    // Which of the documents this opportunity asks for are already in the owner's wallet.
+    const inWallet = new Set(await Document.distinct("kind", { owner: req.user._id }));
     res.json({
       opportunity: { ...publicOpportunity(opportunity), organisationName: org?.name ?? null },
+      documentsNeeded: (opportunity.requiredDocuments ?? []).map((kind) => ({ kind, inWallet: inWallet.has(kind) })),
       fit: evaluate(opportunity.criteria, business),
       acceptingApplications: opportunity.isAcceptingApplications() && organisationActive(org),
       // What the owner would be agreeing to share if they apply.
@@ -137,7 +137,7 @@ export function opportunityRoutes({ config }) {
   // Save a draft, or save and submit. Needs an open opportunity, a business that meets every required requirement,
   // and (to submit) the owner's agreement to share their business summary with the organisation.
   applications.post("/", async (req, res) => {
-    const { opportunityId, message, submit, consent, documentIds } = applicationSaveSchema.parse(req.body);
+    const { opportunityId, message, submit, consent, documentIds, answers } = applicationSaveSchema.parse(req.body);
     const opportunity = await Opportunity.findById(opportunityId);
     if (!opportunity || ["Draft", "Pending Approval"].includes(opportunity.status)) throw new ApiError(404, "not_found", "Not found.");
     const org = await organisationOf(opportunity);
@@ -160,6 +160,30 @@ export function opportunityRoutes({ config }) {
       });
     }
 
+    // Answers to the organisation's questions. A draft may be partly answered; a submission needs every required one.
+    const questions = opportunity.questions ?? [];
+    const given = new Map();
+    if (answers === undefined) {
+      for (const a of application?.answers ?? []) given.set(String(a.question), a.answer);
+    } else {
+      answers.forEach((a, i) => {
+        if (!questions.some((q) => String(q._id) === a.questionId)) {
+          throw new ApiError(422, "validation", "Please check the highlighted fields.", { [`answers.${i}.questionId`]: "This question is not part of the opportunity." });
+        }
+        given.set(a.questionId, a.answer);
+      });
+    }
+    if (submit) {
+      const unanswered = {};
+      questions.forEach((q, i) => {
+        if (q.required && !(given.get(String(q._id)) ?? "").trim()) unanswered[`answers.${i}`] = "Answer this question.";
+      });
+      if (Object.keys(unanswered).length > 0) throw new ApiError(422, "validation", "Please answer the required questions.", unanswered);
+    }
+    const answerList = questions
+      .map((q) => ({ question: q._id, text: q.text, answer: (given.get(String(q._id)) ?? "").trim() }))
+      .filter((a) => a.answer !== "");
+
     // Documents are attached only when submitting, only with the owner's agreement, and only from their own wallet.
     const attach = submit ? [...new Set(documentIds)] : [];
     if (submit) {
@@ -175,6 +199,16 @@ export function opportunityRoutes({ config }) {
         const owned = new Set((await Document.find({ _id: mongoose.trusted({ $in: attach }), owner: req.user._id }).select("_id")).map((d) => String(d._id)));
         const missing = attach.findIndex((id) => !owned.has(id));
         if (missing >= 0) throw new ApiError(422, "validation", "Please check the highlighted fields.", { [`documentIds.${missing}`]: "This document is not in your wallet." });
+      }
+      // The kinds of document this opportunity asks for must be among the ones attached.
+      if ((opportunity.requiredDocuments ?? []).length > 0) {
+        const attachedKinds = new Set(attach.length ? (await Document.find({ _id: mongoose.trusted({ $in: attach }), owner: req.user._id }).select("kind")).map((d) => d.kind) : []);
+        const lacking = opportunity.requiredDocuments.filter((k) => !attachedKinds.has(k));
+        if (lacking.length > 0) {
+          throw new ApiError(422, "documents_required", `This opportunity needs these documents: ${lacking.join(", ")}. Add them to your wallet and attach them.`, {
+            documentIds: `Attach: ${lacking.join(", ")}.`,
+          });
+        }
       }
     }
 
@@ -192,6 +226,7 @@ export function opportunityRoutes({ config }) {
     }
 
     application.message = message;
+    application.answers = answerList;
     if (submit) {
       application.status = "Submitted";
       application.submittedAt = answering ? application.submittedAt : new Date();

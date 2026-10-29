@@ -127,12 +127,28 @@ export const registerSchema = z
   })
   .strict();
 
+/**
+ * Sign in with an email address or a phone number. Send it as `identifier`. `email` is still accepted for apps written
+ * before phone sign-in, and may hold a phone number too. Whether it is an email or a phone number is decided by the
+ * "@" in it, so nothing here says which one an account has.
+ */
 export const loginSchema = z
   .object({
-    email: emailSchema,
+    identifier: z.string().trim().min(1, "Enter your email or phone number.").max(254).optional(),
+    email: z.string().trim().min(1, "Enter your email or phone number.").max(254).optional(),
     password: z.string().min(1).max(200),
   })
-  .strict();
+  .strict()
+  .refine((v) => v.identifier || v.email, { message: "Enter your email or phone number.", path: ["identifier"] });
+
+/** Turn email and push notifications on or off for the account. */
+export const notificationSettingsSchema = z
+  .object({ email: z.boolean({ message: "Choose on or off." }).optional(), push: z.boolean({ message: "Choose on or off." }).optional() })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, "Nothing to update.");
+
+/** The link in a notification email that stops those emails. */
+export const unsubscribeSchema = z.object({ token: z.string().trim().min(1).max(100) }).strict();
 
 export const accountPatchSchema = z
   .object({ fullName: text(100).optional(), phone: phoneSchema.optional() })
@@ -162,6 +178,7 @@ export const passwordChangeSchema = z
  */
 const elevenDigits = z.string().trim().regex(/^[0-9]{11}$/, "Enter the 11 digits, with no spaces or dashes.");
 const agreement = z.literal(true, { message: "Please agree so we can run this check." });
+
 export const verificationCheckSchema = z.discriminatedUnion(
   "type",
   [
@@ -213,6 +230,14 @@ export const statusChangeSchema = z
 /** Query strings: an empty value means "no filter". */
 export const blankToUndefined = (v) => (typeof v === "string" && v.trim() === "" ? undefined : v);
 export const objectId = z.string().regex(/^[a-f0-9]{24}$/i, "Not a valid id.");
+
+/** The documents an owner shows NMREP's reviewers. An empty list ends the sharing. */
+export const verificationDocumentsSchema = z
+  .object({
+    documentIds: z.array(objectId).max(10, "Choose 10 documents or fewer."),
+    agree: z.boolean().optional(),
+  })
+  .strict();
 
 export const businessListQuerySchema = z
   .object({

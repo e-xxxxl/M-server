@@ -86,6 +86,26 @@ describe("eligibility checks (pure)", () => {
     assert.equal(r.met, 0);
   });
 
+  it("an OR group is met when any one member is met, and counts as one requirement", () => {
+    const either = [
+      { key: "state", level: "required", values: ["Kano"], group: 1 },
+      { key: "sector", level: "required", values: ["Manufacturing"], group: 1 },
+    ];
+    const r = evaluate([...either, required("hasCac", {})], business);
+    assert.equal(r.total, 2, "the group counts once, plus the CAC rule");
+    assert.equal(r.met, 2);
+    assert.equal(r.label, "Eligible");
+    assert.deepEqual(r.checks.map((c) => [c.key, c.group, c.met]), [["state", 1, false], ["sector", 1, true], ["hasCac", null, true]]);
+
+    const none = evaluate([{ key: "state", level: "required", values: ["Kano"], group: 2 }, { key: "sector", level: "required", values: ["Other"], group: 2 }], business);
+    assert.equal(none.requiredMissing, 1, "a group with no member met is one missing requirement");
+    assert.equal(none.label, "Nearly eligible");
+
+    const preferred = evaluate([{ key: "state", level: "preferred", values: ["Kano"], group: 1 }, { key: "sector", level: "preferred", values: ["Other"], group: 1 }], business);
+    assert.equal(preferred.label, "Eligible", "a preferred group never blocks");
+    assert.equal(preferred.met, 0);
+  });
+
   it("missing values are not met and show as Not provided", () => {
     const r = evaluate([required("yearsInBusiness", { min: 1 })], { employees: 1 });
     assert.equal(r.checks[0].met, false);
@@ -186,6 +206,55 @@ describe("what owners see", () => {
     assert.deepEqual(loans.map((i) => `${i.title}:${i.fit.label}`), ["Aaa eligible:Eligible", "Zed not eligible:Not eligible"]);
     assert.ok(list.json.items.every((i) => i.type === "Loan"));
     assert.equal((await call("GET", "/api/opportunities?type=Gift", { cookie: o.cookie, origin: null })).status, 422);
+  });
+
+  it("the dashboard counts open opportunities the business is eligible for and has not applied to", async () => {
+    const o = await owner({ sector: "Manufacturing" });
+    const count = async () => (await call("GET", "/api/dashboard", { cookie: o.cookie, origin: null })).json.eligibleOpportunities;
+    const before = await count();
+    assert.equal(typeof before, "number");
+
+    await makeOpportunity({ title: "Counted eligible" }, "Open");
+    await makeOpportunity({ title: "Counted not eligible", criteria: [{ key: "sector", level: "required", values: ["Other"] }, { key: "verified", level: "required" }, { key: "hasTin", level: "required" }] }, "Open");
+    await makeOpportunity({ title: "Counted draft" });
+    assert.equal(await count(), before + 1, "only the open, eligible one counts");
+
+    const eligible = (await call("GET", "/api/opportunities", { cookie: o.cookie, origin: null })).json.items.find((i) => i.title === "Counted eligible");
+    const draft = await call("POST", "/api/applications", { cookie: o.cookie, body: { opportunityId: eligible.id, message: "" } });
+    assert.equal(draft.status, 201, JSON.stringify(draft.json));
+    assert.equal(await count(), before + 1, "a draft is still open to apply");
+
+    const sent = await call("POST", "/api/applications", { cookie: o.cookie, body: { opportunityId: eligible.id, message: "Please consider us.", submit: true, consent: { summary: true } } });
+    assert.equal(sent.status, 201, JSON.stringify(sent.json));
+    assert.equal(await count(), before, "a submitted application no longer counts");
+  });
+
+  it("tags: up to five known categories, shown in the list and usable as a filter", async () => {
+    const o = await owner();
+    const tagged = await makeOpportunity({ title: "Tagged one", type: "Support", tags: ["Legal", "Insurance", "Legal"] }, "Open");
+    await makeOpportunity({ title: "Untagged one", type: "Support" }, "Open");
+
+    const stored = await call("GET", `/api/admin/opportunities/${tagged}`, { cookie: admin, origin: null });
+    assert.deepEqual(stored.json.opportunity.tags, ["Legal", "Insurance"], "a repeated tag is kept once");
+    assert.deepEqual((await call("GET", `/api/opportunities/${tagged}`, { cookie: o.cookie, origin: null })).json.opportunity.tags, ["Legal", "Insurance"]);
+
+    const all = (await call("GET", "/api/opportunities", { cookie: o.cookie, origin: null })).json.items;
+    assert.deepEqual(all.find((i) => i.title === "Tagged one").tags, ["Legal", "Insurance"]);
+    assert.deepEqual(all.find((i) => i.title === "Untagged one").tags, []);
+
+    const legal = (await call("GET", "/api/opportunities?tag=Legal", { cookie: o.cookie, origin: null })).json.items;
+    assert.ok(legal.length >= 1 && legal.every((i) => i.tags.includes("Legal")));
+    assert.ok(!legal.some((i) => i.title === "Untagged one"));
+    assert.equal((await call("GET", "/api/opportunities?tag=Gardening", { cookie: o.cookie, origin: null })).status, 422);
+
+    const tooMany = await call("POST", "/api/admin/opportunities", { cookie: admin, body: { ...base, tags: ["Equity", "Legal", "Export", "Insurance", "Logistics", "Technology"] } });
+    assert.equal(tooMany.status, 422);
+    const unknown = await call("POST", "/api/admin/opportunities", { cookie: admin, body: { ...base, tags: ["Gardening"] } });
+    assert.equal(unknown.status, 422);
+
+    const edited = await call("PATCH", `/api/admin/opportunities/${tagged}`, { cookie: admin, body: { tags: [] } });
+    assert.equal(edited.status, 200);
+    assert.deepEqual(edited.json.opportunity.tags, []);
   });
 
   it("an expired deadline hides the opportunity from the list and blocks applying", async () => {
@@ -411,6 +480,21 @@ describe("reports and exports", () => {
     assert.ok(Array.isArray(res.json.byMonth) && res.json.byMonth.length >= 1);
     assert.ok(Array.isArray(res.json.applicationsPerOpportunity));
     assert.ok(res.json.applicationsByStatus.length >= 1);
+  });
+
+  it("breaks the registry down by place, type, revenue, size and age, counting every business once", async () => {
+    await owner({ state: "Oyo", lga: "Ibadan North", employees: 12, yearEstablished: new Date().getFullYear() - 4, annualRevenue: "5 to 25 million naira" });
+    const r = (await call("GET", "/api/admin/reports", { cookie: admin, origin: null })).json;
+    const sum = (rows) => rows.reduce((n, x) => n + x.count, 0);
+    assert.ok(r.byLga.find((x) => x.name === "Ibadan North, Oyo").count >= 1);
+    for (const key of ["byBusinessType", "byAnnualRevenue", "byEmployees", "byBusinessAge"]) assert.equal(sum(r[key]), r.totalBusinesses, key);
+    assert.deepEqual(r.byEmployees.map((x) => x.name), ["0 to 9 employees", "10 to 49 employees", "50 to 199 employees", "200 or more employees"]);
+    assert.ok(r.byEmployees[1].count >= 1);
+    assert.ok(r.byBusinessAge.find((x) => x.name === "3 to 5 years").count >= 1);
+    assert.equal(r.byAnnualRevenue.length >= 5, true, "every choice on the form is listed, even with no businesses");
+    assert.ok(r.totalEmployees >= 12);
+    assert.deepEqual(Object.keys(r.training).sort(), ["certificatesIssued", "completed", "failed", "participants", "passed"]);
+    assert.ok(!JSON.stringify(r).includes("@"), "no contact details appear in the counts");
   });
 
   it("exports CSV files that cannot run formulas, and logs the export", async () => {

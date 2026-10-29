@@ -93,7 +93,7 @@ export function registrationBody(overrides = {}) {
     account: {
       fullName: "Ada Obi",
       email: `ada${counter}@example.com`,
-      phone: "+234 801 234 5678",
+      phone: `+23480${String(10000000 + counter)}`,
       password: "Secret123",
       ...overrides.account,
     },

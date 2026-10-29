@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { audit } from "../models/AuditLog.js";
 import { ApiError } from "../middleware/errors.js";
+import { requirePaidRegistration } from "../middleware/paid.js";
 import { requireAuth, requireRole } from "../middleware/security.js";
 import { normalizeCertificateCode } from "../lib/codes.js";
 import {
@@ -78,7 +79,7 @@ export function trainingStaffRoutes({ scope, viewer }) {
 /** The business owner's own trainings and certificates. */
 export function trainingOwnerRoutes({ config }) {
   const router = Router();
-  router.use(requireAuth(config), requireRole("msme_owner"));
+  router.use(requireAuth(config), requireRole("msme_owner"), requirePaidRegistration(config));
   router.get("/", async (req, res) => {
     res.json({ items: await ownerTrainings(req.user._id) });
   });

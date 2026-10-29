@@ -601,6 +601,7 @@ describe("partner reports, overview and the activity log", () => {
     assert.equal(bOverview.json.beneficiaries, 0);
     const bReport = await call("GET", "/api/partner/reports", { cookie: b.cookie, origin: null });
     assert.deepEqual(bReport.json.applicationsPerOpportunity, []);
+    assert.deepEqual(bReport.json.training, { participants: 0, completed: 0, certificatesIssued: 0, passed: 0, failed: 0 });
   });
 
   it("partner and admin actions on organisations are recorded", async () => {

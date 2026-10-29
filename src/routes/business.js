@@ -3,12 +3,13 @@ import { Business } from "../models/Business.js";
 import { applyComplianceRules } from "../lib/compliance.js";
 import { buildInsights } from "../lib/insights.js";
 import { ApiError } from "../middleware/errors.js";
+import { requirePaidRegistration } from "../middleware/paid.js";
 import { requireAuth, requireRole } from "../middleware/security.js";
 import { businessPatchSchema } from "../schemas.js";
 
 export function businessRoutes({ config }) {
   const router = Router();
-  router.use(requireAuth(config), requireRole("msme_owner"));
+  router.use(requireAuth(config), requireRole("msme_owner"), requirePaidRegistration(config));
 
   // A user can only ever reach their own business: it is always looked up by the session's user.
   const own = async (req) => {

@@ -113,6 +113,35 @@ describe("the provider client", () => {
   });
 });
 
+describe("Prembly test mode (sandbox)", () => {
+  // The shape below is what Prembly's test mode really answers for a NIN: made up data, "is_sandbox": true.
+  const sandboxNin = {
+    status: true,
+    response_code: "00",
+    message: "Verification successful (SANDBOX MODE)",
+    data: { nin: "56182742701", surname: "AMANDA", firstname: "GRACE", middlename: "CHIMAMANDA", telephoneno: "07082078516", gender: "f" },
+    billing_info: { was_charged: false, amount: 0, currency: "NGN" },
+    verification: { status: "VERIFIED", reference: "e0d0bb6f-5988-4068-99da-8bb2c440b597" },
+    is_sandbox: true,
+  };
+  const fetchSandbox = async () => ({ status: 200, ok: true, json: async () => sandboxNin });
+
+  it("reads a test mode answer like a normal one outside production", async () => {
+    const p = createPrembly({ apiKey: "test-key-not-real", baseUrl: "https://api.prembly.test", allowSandbox: true }, { fetchImpl: fetchSandbox, log: quiet });
+    const r = await p.nin("56182742701");
+    assert.equal(r.found, true);
+    assert.deepEqual(r.person, { firstName: "GRACE", middleName: "CHIMAMANDA", lastName: "AMANDA", phone: "07082078516" });
+  });
+
+  it("refuses a test mode answer in production, so made up data is never recorded as a real check", async () => {
+    let logged = "";
+    const p = createPrembly({ apiKey: "test-key-not-real", baseUrl: "https://api.prembly.test", allowSandbox: false }, { fetchImpl: fetchSandbox, log: { error: (m) => (logged += m) } });
+    assert.deepEqual(await p.nin("56182742701"), { unavailable: true });
+    assert.match(logged, /sandbox mode/);
+    assert.ok(!logged.includes("56182742701") && !logged.includes("GRACE"), "the log never holds the number or the data");
+  });
+});
+
 describe("running a check", () => {
   it("lists the four checks and says why CAC and TIN cannot be run until the profile has the numbers", async () => {
     const o = await owner();

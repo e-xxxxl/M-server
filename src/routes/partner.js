@@ -14,6 +14,8 @@ import { User } from "../models/User.js";
 import { ApiError } from "../middleware/errors.js";
 import { requireAuth, requirePasswordChanged, requireRole } from "../middleware/security.js";
 import { idParamSchema } from "../schemas.js";
+import { normaliseQuestions } from "../lib/opportunity-form.js";
+import { trainingStats } from "../lib/report-breakdowns.js";
 import { trainingStaffRoutes } from "./training.js";
 import {
   applicationListQuerySchema,
@@ -108,7 +110,7 @@ export function partnerRoutes({ config }) {
   // ------------------------------------------------------------ opportunities
   router.get("/opportunities", async (req, res) => {
     const { status } = opportunityListQuerySchema.parse(req.query);
-    const items = await Opportunity.find(status ? { organisation: req.org._id, status } : { organisation: req.org._id }).sort({ createdAt: -1 }).limit(200);
+    const items = await Opportunity.find({ organisation: req.org._id, archivedAt: null, ...(status ? { status } : {}) }).sort({ createdAt: -1 }).limit(200);
     const counts = await Application.aggregate([
       { $match: { opportunity: { $in: items.map((o) => o._id) }, status: { $ne: "Draft" } } },
       { $group: { _id: "$opportunity", count: { $sum: 1 } } },
@@ -120,7 +122,7 @@ export function partnerRoutes({ config }) {
   // A new opportunity is always a draft owned by this organisation. NMREP approves it before owners can see it.
   router.post("/opportunities", async (req, res) => {
     const data = partnerOpportunityCreateSchema.parse(req.body);
-    const opportunity = await Opportunity.create({ ...data, provider: req.org.name, organisation: req.org._id, createdBy: req.user._id });
+    const opportunity = await Opportunity.create({ ...data, questions: normaliseQuestions(data.questions), provider: req.org.name, organisation: req.org._id, createdBy: req.user._id });
     await audit(req.user, "opportunity.create", `${req.org.name} created opportunity "${opportunity.title}"`, { type: "opportunity", id: opportunity._id });
     res.status(201).json({ opportunity: publicOpportunity(opportunity) });
   });
@@ -140,6 +142,7 @@ export function partnerRoutes({ config }) {
     if (opportunity.status !== "Draft") {
       throw new ApiError(409, "locked", "Only a draft can be edited. Ask NMREP to change an opportunity that has been submitted.");
     }
+    if (patch.questions) patch.questions = normaliseQuestions(patch.questions, opportunity.questions);
     Object.assign(opportunity, patch);
     await opportunity.save();
     res.json({ opportunity: publicOpportunity(opportunity) });
@@ -211,6 +214,8 @@ export function partnerRoutes({ config }) {
         id: String(application._id),
         status: application.status,
         message: applicant ? application.message : "",
+        // Answers to the opportunity's questions, shown with the rest of the applicant's details while the sharing is active.
+        answers: applicant ? application.toJSON().answers : [],
         submittedAt: application.submittedAt,
         history: application.history,
       },
@@ -297,6 +302,7 @@ export function partnerRoutes({ config }) {
       applicantsByState: named(byState),
       applicantsBySector: named(bySector),
       applicationsPerOpportunity: perOpportunity,
+      training: await trainingStats(ids),
     });
   });
 
