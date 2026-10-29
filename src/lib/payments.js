@@ -83,7 +83,7 @@ export async function settlePayment(config, reference, { userId = null, now = ne
     const claimed = await Payment.findOneAndUpdate(
       { _id: payment._id, status: mongoose.trusted({ $ne: "success" }) },
       { $set: { status: "success", paidAt: r.paidAt ?? now } },
-      { new: true },
+      { returnDocument: "after" },
     );
     if (!claimed) return { outcome: "success", payment, alreadyRecorded: true };
 

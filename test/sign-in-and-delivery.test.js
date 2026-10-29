@@ -280,3 +280,16 @@ describe("broadcasts and reminders also go out by email and push", () => {
     assert.equal(sentTo(o.email).filter((m) => /closes in 3 days/.test(m.subject)).length, 1);
   });
 });
+
+describe("giving existing accounts a phone key on start", () => {
+  it("fills in missing keys with the production query settings (this once crashed the server on start)", async () => {
+    const o = await owner();
+    await User.collection.updateOne({ _id: new User.base.Types.ObjectId(o.userId) }, { $unset: { phoneKey: "" } });
+    const { backfillPhoneKeys } = await import("../src/lib/phone.js");
+    assert.ok((await backfillPhoneKeys()) >= 1);
+    const fresh = await User.findById(o.userId).select("+phoneKey");
+    assert.ok(fresh.phoneKey);
+    // Running it again finds nothing left to do.
+    assert.equal(await backfillPhoneKeys(), 0);
+  });
+});

@@ -21,7 +21,7 @@ export function deviceRoutes({ config }) {
   // moves to this one, because the phone now belongs to whoever is signed in on it.
   router.post("/", async (req, res) => {
     const { token, platform } = registerSchema.parse(req.body);
-    const device = await Device.findOneAndUpdate({ token }, { $set: { user: req.user._id, platform, lastSeenAt: new Date() }, $setOnInsert: { token } }, { upsert: true, new: true });
+    const device = await Device.findOneAndUpdate({ token }, { $set: { user: req.user._id, platform, lastSeenAt: new Date() }, $setOnInsert: { token } }, { upsert: true, returnDocument: "after" });
     // An account keeps its ten most recently used phones.
     const mine = await Device.find({ user: req.user._id }).sort({ lastSeenAt: -1 }).select("_id");
     if (mine.length > MAX_DEVICES) await Device.deleteMany({ _id: mongoose.trusted({ $in: mine.slice(MAX_DEVICES).map((d) => d._id) }) });

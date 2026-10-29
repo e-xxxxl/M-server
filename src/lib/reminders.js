@@ -12,7 +12,7 @@ import { evaluate } from "./eligibility.js";
 /**
  * Reminders that need a clock: a programme closing soon, and a training session tomorrow. Each reminder is recorded in
  * ReminderLog under a unique key, so running the job twice (or on two servers at once) never sends one twice.
- * Reminders are notifications in the app only. They are never emailed.
+ * Reminders are notifications like any other: in the app, on the phone and, unless the owner turned it off, by email.
  */
 
 const DAY = 24 * 60 * 60 * 1000;

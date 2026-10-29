@@ -53,6 +53,8 @@ async function owner(business = {}, account = {}) {
   assert.equal(reg.status, 201, reg.text);
   return { cookie: reg.cookie, user: reg.json.user, business: reg.json.business, body: null };
 }
+/** The provider's record carrying this owner's own phone number, in the local form. */
+const ownPhone = (o) => "0" + phoneTail(o.user.phone);
 const run = (o, body) => call("POST", "/api/verification/checks", { cookie: o.cookie, body });
 
 describe("name matching", () => {
@@ -161,7 +163,7 @@ describe("running a check", () => {
 
   it("a NIN that matches passes, moves the business to Pending Verification, and stores no NIN, name, address or photo", async () => {
     const o = await owner();
-    answer = () => ninRecord();
+    answer = () => ninRecord({ telephoneno: ownPhone(o) });
     const res = await run(o, { type: "nin", number: NIN, consent: true });
     assert.equal(res.status, 201, res.text);
     assert.equal(res.json.check.status, "Passed");
@@ -170,7 +172,7 @@ describe("running a check", () => {
     assert.ok(!res.text.includes(NIN) && !res.text.includes("Chika") && !res.text.includes("SECRET"), "the response holds nothing from the record");
 
     const stored = JSON.stringify(await VerificationCheck.find({}).lean());
-    for (const secret of [NIN, "Chika", "SECRET ADDRESS", "BASE64PHOTO", "1990-01-01", "08012345678"]) assert.ok(!stored.includes(secret), `database does not hold ${secret}`);
+    for (const secret of [NIN, "Chika", "SECRET ADDRESS", "BASE64PHOTO", "1990-01-01", ownPhone(o)]) assert.ok(!stored.includes(secret), `database does not hold ${secret}`);
     const row = await VerificationCheck.findOne({ owner: o.user.id });
     assert.equal(row.nameMatch, true);
     assert.equal(row.phoneMatch, true);
@@ -356,7 +358,7 @@ describe("what reviewers see", () => {
     const b = await owner({ businessName: "Beta Traders" }, { fullName: "Ada Obi" });
     // A number no other test used, so the count is only about these two businesses.
     const shared = "55555555555";
-    answer = () => ninRecord();
+    answer = () => ninRecord({ telephoneno: ownPhone(a) });
     await run(a, { type: "nin", number: shared, consent: true });
     await run(b, { type: "nin", number: shared, consent: true });
 

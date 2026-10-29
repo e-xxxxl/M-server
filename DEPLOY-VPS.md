@@ -673,6 +673,43 @@ What to know:
 - nginx already allows requests up to 64 KB. **Uploads need more**: set `client_max_body_size 8m;` in the `location /api/documents` block (the site file in `deploy/nginx-api.nmrep.ng.conf` has it), then `sudo nginx -t && sudo systemctl reload nginx`.
 - Deleting an account deletes its files from the disk.
 
+### 10.8 The registration fee (Paystack), optional
+
+Every business owner pays ₦1,000 a year through Paystack. It is **off** until you set a Paystack secret key.
+
+1. In the Paystack dashboard, copy the **secret key** (Settings, API Keys & Webhooks). Start with the **test** key (`sk_test_...`): it takes Paystack's test cards and moves no money. Use the live key (`sk_live_...`) only at launch.
+2. In the same page set the **webhook URL** to `https://api.nmrep.ng/api/webhooks/paystack`. Paystack tells the server about every payment there, so a payment is recorded even if the payer closes the page. The server checks the signature and asks Paystack to confirm each payment, so nobody can fake one.
+3. Add to `/opt/nmrep/shared/.env` (no spaces, no quotes), then restart:
+
+   ```
+   PAYSTACK_SECRET_KEY=sk_test_the_value_from_paystack
+   REGISTRATION_FEE_NAIRA=1000
+   REGISTRATION_PERIOD_DAYS=365
+   ```
+
+   ```bash
+   sudo systemctl restart nmrep-api
+   sudo journalctl -u nmrep-api -n 10 --no-pager      # "Registration fee is ON: N1000 a year through Paystack. (test key)"
+   ```
+
+What to know:
+
+- **Existing accounts will be asked to pay at their next sign-in** once the key is set, because they have not paid yet. If you want existing owners to have a free first year, tell the developer before switching it on.
+- With a **test** key the server prints a warning on start: real payments do not work until the live key is set. Use only Paystack's test cards.
+- Nothing about cards ever reaches the NMREP server or the website: the payer pays on Paystack's own page.
+- Remove the key (or leave it unset) to switch the fee off again; nobody is blocked then.
+
+### 10.9 Push notifications, "Stop these emails" links and reminders
+
+- **Push** goes through Expo and needs nothing from you: it is on by default and sends nothing until the phone app registers phones. `PUSH_ENABLED=false` switches it off. `EXPO_ACCESS_TOKEN` is only needed if you turn on "enhanced push security" in your Expo account.
+- **UNSUBSCRIBE_SECRET** signs the "Stop these emails" link in notification emails. Set it once to a long random value and never change it, otherwise old links in sent emails stop working. Create one with `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"` and add it to `/opt/nmrep/shared/.env`. The server warns on start while it is missing.
+- **Reminders** (a programme closing in 3 days and 1 day, a training session tomorrow) run inside the API every hour and never send the same reminder twice. `REMINDERS_ENABLED=false` switches them off.
+- Large messages (for example a message to every owner) are emailed in batches of 100 with a short pause, so Resend's rate limit is not hit. A big message can take a few minutes to finish.
+
+### 10.10 The /docs password (on the PC that builds the website)
+
+The `/docs` page of the website is protected by a password that is set **when the website is built**, not on the server. On the PC, put `DOCS_PASSWORD=your-long-password` in the website folder's `.env` file (never commit it), then run `npm run build`. The documentation is encrypted with that password inside the built files. Without the variable, the page is not published. To change the password, change the value and build and upload again. Share the password only with the app developer.
+
 ---
 
 ## 11. Check everything, then reboot once
