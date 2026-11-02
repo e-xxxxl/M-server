@@ -4,6 +4,7 @@ import { ApiError } from "../middleware/errors.js";
 import { requirePaidRegistration } from "../middleware/paid.js";
 import { requireAuth, requireRole } from "../middleware/security.js";
 import { normalizeCertificateCode } from "../lib/codes.js";
+import { toCsv } from "../lib/csv.js";
 import {
   certificateByCode,
   completeParticipant,
@@ -11,13 +12,16 @@ import {
   markAttendance,
   opportunityView,
   ownerTrainings,
+  participantRows,
   participantsOf,
   recordAssessment,
+  reissueCertificate,
+  revokeCertificate,
   savePlan,
   trainingList,
 } from "../lib/training.js";
 import { idParamSchema } from "../schemas.js";
-import { assessmentSchema, attendanceSchema, completeSchema, trainingPlanSchema } from "../schemas-opportunities.js";
+import { assessmentSchema, attendanceSchema, completeSchema, reissueCertificateSchema, revokeCertificateSchema, trainingPlanSchema } from "../schemas-opportunities.js";
 
 function parseId(value) {
   const parsed = idParamSchema.safeParse(value);
@@ -71,6 +75,48 @@ export function trainingStaffRoutes({ scope, viewer }) {
     const opportunity = await findTraining(scope(req), parseId(req.params.id));
     await completeParticipant(opportunity, parseId(req.params.applicationId), note, req.user);
     res.json({ participants: await participantsOf(opportunity, viewer) });
+  });
+
+  router.post("/:id/participants/:applicationId/certificate/revoke", async (req, res) => {
+    const { reason } = revokeCertificateSchema.parse(req.body);
+    const opportunity = await findTraining(scope(req), parseId(req.params.id));
+    await revokeCertificate(opportunity, parseId(req.params.applicationId), reason, req.user);
+    await audit(req.user, "training.certificate.revoke", `Withdrew a certificate for "${opportunity.title}" (${reason})`.slice(0, 300), { type: "application", id: req.params.applicationId });
+    res.json({ participants: await participantsOf(opportunity, viewer) });
+  });
+
+  router.post("/:id/participants/:applicationId/certificate/reissue", async (req, res) => {
+    const { reason } = reissueCertificateSchema.parse(req.body);
+    const opportunity = await findTraining(scope(req), parseId(req.params.id));
+    await reissueCertificate(opportunity, parseId(req.params.applicationId), reason, req.user);
+    await audit(req.user, "training.certificate.reissue", `Issued a new certificate for "${opportunity.title}"${reason ? ` (${reason})` : ""}`.slice(0, 300), { type: "application", id: req.params.applicationId });
+    res.json({ participants: await participantsOf(opportunity, viewer) });
+  });
+
+  // The participants as a spreadsheet. A training provider gets only what each owner agreed to share, like the screen.
+  router.get("/:id/participants.csv", async (req, res) => {
+    const opportunity = await findTraining(scope(req), parseId(req.params.id));
+    const { sessions, people } = await participantRows(opportunity, viewer);
+    const mark = (p, s) => (String(s._id) in p.attendance ? (p.attendance[String(s._id)] ? "Present" : "Absent") : "Not recorded");
+    const csv = toCsv(
+      [
+        { header: "Business", value: (p) => p.businessName ?? "Not shared" },
+        { header: "Owner", value: (p) => p.ownerName ?? "Not shared" },
+        { header: "Status", value: (p) => p.status },
+        ...sessions.map((s) => ({ header: `Session: ${s.title}`, value: (p) => mark(p, s) })),
+        { header: "Sessions attended", value: (p) => p.attended },
+        { header: "Assessment", value: (p) => p.assessment?.result ?? "" },
+        { header: "Score", value: (p) => p.assessment?.score ?? "" },
+        { header: "Completed on", value: (p) => (p.completedAt ? new Date(p.completedAt).toISOString().slice(0, 10) : "") },
+        { header: "Certificate", value: (p) => p.certificateCode ?? (p.certificateWithdrawnOn ? "Withdrawn" : "") },
+      ],
+      people,
+    );
+    await audit(req.user, "training.export", `Exported the participants of "${opportunity.title}"`, { type: "opportunity", id: opportunity._id });
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="training-participants.csv"');
+    res.setHeader("Cache-Control", "no-store");
+    res.send(csv);
   });
 
   return router;

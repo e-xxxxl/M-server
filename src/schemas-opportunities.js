@@ -296,4 +296,8 @@ export const assessmentSchema = z
   .object({ applicationId: objectId, result: oneOf(assessmentResults), score: scoreSchema.default(null), note: optionalText(200).default("") })
   .strict();
 
+/** Withdrawing a certificate needs a reason, kept on file (never shown to the public). */
+export const revokeCertificateSchema = z.object({ reason: text(200) }).strict();
+export const reissueCertificateSchema = z.object({ reason: optionalText(200).default("") }).strict();
+
 export const completeSchema = z.object({ note: optionalText(200).default("") }).strict();

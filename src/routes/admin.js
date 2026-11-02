@@ -12,6 +12,8 @@ import { issueNmrepId } from "../lib/ids.js";
 import { duplicatesOf, latestChecks, reviewerView, verificationEnabled } from "../lib/verification.js";
 import { sendDocument, sharedView } from "../lib/documents.js";
 import { submittedDocuments } from "../lib/verification-documents.js";
+import { Product } from "../models/Product.js";
+import { sendProductImage } from "./products.js";
 import { ApiError } from "../middleware/errors.js";
 import { requireAuth, requirePasswordChanged, requireRole } from "../middleware/security.js";
 import {
@@ -187,8 +189,10 @@ export function adminRoutes({ config }) {
     ]);
     const verificationChecks = await Promise.all(checks.map(async (c) => reviewerView(c, await duplicatesOf(c))));
     const submitted = await submittedDocuments(business);
+    const products = await Product.find({ owner: business.owner }).sort({ createdAt: -1 });
     res.json({
       business: business.toJSON(),
+      products,
       owner: ownerSummary(owner),
       verificationChecks,
       // The documents the owner chose to show reviewers for verification (the document check).
@@ -210,6 +214,16 @@ export function adminRoutes({ config }) {
     if (!doc) throw new ApiError(404, "not_found", "Not found.");
     await audit(req.user, "document.download", `Downloaded "${doc.title}" (${doc.kind}) for verification of "${business.businessName}"`, { type: "business", id: business._id });
     await sendDocument(res, doc);
+  });
+
+  // A picture of one of the business's products, for staff looking at the business profile.
+  router.get("/businesses/:id/products/:productId/images/:imageId", async (req, res) => {
+    const business = await Business.findById(parseId(req.params.id));
+    if (!business) throw new ApiError(404, "not_found", "Not found.");
+    const product = await Product.findOne({ _id: parseId(req.params.productId), owner: business.owner });
+    const image = product?.images.find((i) => String(i._id) === parseId(req.params.imageId));
+    if (!image) throw new ApiError(404, "not_found", "Not found.");
+    await sendProductImage(res, image);
   });
 
   // Manual review: the status shown on the owner's dashboard. Verified businesses receive their NMREP Business ID.

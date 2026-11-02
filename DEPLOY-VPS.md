@@ -672,6 +672,7 @@ What to know:
 - The nightly backup script now also saves `/var/lib/nmrep/documents` to `/var/backups/nmrep/nmrep-documents-*.tar.gz`. Copy those off the server like the database backups.
 - nginx already allows requests up to 64 KB. **Uploads need more**: set `client_max_body_size 8m;` in the `location /api/documents` block (the site file in `deploy/nginx-api.nmrep.ng.conf` has it), then `sudo nginx -t && sudo systemctl reload nginx`.
 - Deleting an account deletes its files from the disk.
+- **Product pictures use the same private, encrypted storage.** Owners can add up to 3 pictures (JPEG or PNG, 3 MB each) to each product or service. They need the same `DOCUMENT_ENCRYPTION_KEY` and folder as above: without the key the picture controls are hidden, and the nightly backup of `/var/lib/nmrep/documents` already covers them. A larger `client_max_body_size` than the 8m set for documents is not needed.
 
 ### 10.8 The registration fee (Paystack), optional
 
@@ -698,6 +699,8 @@ What to know:
 - With a **test** key the server prints a warning on start: real payments do not work until the live key is set. Use only Paystack's test cards.
 - Nothing about cards ever reaches the NMREP server or the website: the payer pays on Paystack's own page.
 - Remove the key (or leave it unset) to switch the fee off again; nobody is blocked then.
+- **The super admin can also change the fee from the admin portal** (Settings): the amount, how many days one payment lasts, and a switch to pause the fee without removing the key. A change applies at once, survives a restart and is written to the Activity log. The values in `.env` are the starting point; Settings can put them back. The Paystack key itself is never shown or changed there.
+- Reminders can be switched off and on from the same Settings page.
 
 ### 10.9 Push notifications, "Stop these emails" links and reminders
 

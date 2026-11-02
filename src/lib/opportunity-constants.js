@@ -1,14 +1,14 @@
 // Values used by opportunities, applications, organisations and consent. Kept apart from options.js
 // because options.js is compared with the website's registration form, and these are not registration choices.
 
-export const opportunityTypes = ["Funding", "Grant", "Loan", "Training", "Support"];
+export const opportunityTypes = ["Opportunity", "Grant", "Loan", "Training", "Support"];
 
 /**
  * Categories from the framework (section 8), as tags on top of the type: an opportunity has one type and up to
- * `maxOpportunityTags` tags. Funding, grants, loans and training are types, so they are not repeated here.
+ * `maxOpportunityTags` tags. Grants, loans and training are types, so they are not repeated here.
  */
 export const opportunityTagGroups = [
-  { group: "Funding", tags: ["Equity", "Equipment financing"] },
+  { group: "Business empowerment", tags: ["Equity", "Equipment financing"] },
   { group: "Skills and growth", tags: ["Digital marketing", "Accounting", "Export", "Leadership", "Technology"] },
   { group: "Government programmes", tags: ["MSME support", "Sector programme", "State programme"] },
   { group: "Business services", tags: ["Legal", "Logistics", "Insurance"] },
@@ -69,7 +69,7 @@ export const beneficiaryStatuses = ["Approved", "Completed"];
 
 /**
  * Organisation types from the framework document. Training providers have the training tools (see lib/training.js).
- * Funding partners have their own tools planned for a later phase, so they cannot be created yet.
+ * Opportunity partners have their own tools planned for a later phase, so they cannot be created yet.
  */
 export const organisationTypes = [
   "Government Ministry",
@@ -80,9 +80,9 @@ export const organisationTypes = [
   "Business Association",
   "Private Sector Partner",
   "Training Provider",
-  "Funding Partner",
+  "Opportunity Partner",
 ];
-export const organisationTypesAvailable = organisationTypes.filter((t) => t !== "Funding Partner");
+export const organisationTypesAvailable = organisationTypes.filter((t) => t !== "Opportunity Partner");
 
 /** How a training is delivered. */
 export const trainingModes = ["In person", "Online", "Hybrid"];

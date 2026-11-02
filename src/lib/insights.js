@@ -54,8 +54,8 @@ export function nextActions(business) {
   }
   if (!filled(business.fundingNeeds)) {
     actions.push({
-      id: "funding",
-      title: "Tell us the funding you are looking for",
+      id: "opportunities",
+      title: "Tell us the size of opportunity you are looking for",
       description: "It helps show which opportunities fit your business.",
       section: "financial",
     });

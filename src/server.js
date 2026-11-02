@@ -11,6 +11,8 @@ import { configureDocumentStorage } from "./lib/document-storage.js";
 import { configurePrembly } from "./lib/prembly.js";
 import { configurePaystack } from "./lib/paystack.js";
 import { configurePush } from "./lib/push.js";
+import { applyRenames } from "./lib/renames.js";
+import { loadSettings } from "./lib/settings.js";
 import { backfillPhoneKeys } from "./lib/phone.js";
 import { startReminderScheduler } from "./lib/reminders.js";
 import { verificationEnabled } from "./lib/verification.js";
@@ -36,6 +38,10 @@ try {
   process.exit(1);
 }
 console.log("Connected to MongoDB.");
+
+// What the super admin changed in the system settings is laid over the .env values before anything reads them.
+await loadSettings(config);
+await applyRenames();
 
 const mail = configureMailer(config);
 if (!mail.enabled) {
@@ -87,8 +93,9 @@ const server = app.listen(config.port, config.host, () => {
 
 // Reminders (a programme closing soon, a training session tomorrow). Safe to run on more than one server: each
 // reminder is recorded under a unique key, so nobody is told twice.
-const stopReminders = config.reminders.enabled ? startReminderScheduler(config.reminders) : () => {};
-if (!config.reminders.enabled) console.log("Reminders are off (REMINDERS_ENABLED=false).");
+// Always started: each pass checks the live setting, so the super admin can switch reminders on or off without a restart.
+const stopReminders = startReminderScheduler(config.reminders);
+if (!config.reminders.enabled) console.log("Reminders are off (REMINDERS_ENABLED=false or switched off by the super admin).");
 
 async function shutdown(signal) {
   console.log(`${signal} received, shutting down.`);

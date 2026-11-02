@@ -41,7 +41,7 @@ export const sharingCategories = {
     label: "Full business profile",
     required: false,
     description:
-      "Business address, CAC and TIN numbers, owner role, number of branches, bank name, existing loans, funding needs, website and social media handles.",
+      "Business address, CAC and TIN numbers, owner role, number of branches, bank name, existing loans, the size of opportunity sought, website and social media handles.",
     fields: ["address", "ownerName", "ownerRole", "cacNumber", "tin", "branches", "bankName", "existingLoans", "fundingNeeds", "website", "facebook", "instagram", "x", "tiktok"],
   },
 };

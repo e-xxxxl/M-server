@@ -41,8 +41,9 @@ const area = (id, title, items) => {
 /**
  * @param business a business profile (plain object)
  * @param documentKinds the kinds of document the owner has in the wallet
+ * @param productCount how many products and services the business has listed
  */
-export function buildHealthProfile(business, documentKinds = []) {
+export function buildHealthProfile(business, documentKinds = [], productCount = 0) {
   const profile = (section) => ({ screen: "profile", section });
   const have = new Set(documentKinds);
 
@@ -83,6 +84,14 @@ export function buildHealthProfile(business, documentKinds = []) {
         link: profile(s.id),
       };
     }),
+    {
+      id: "products",
+      label: "Products and services listed",
+      done: productCount > 0,
+      detail: productCount > 0 ? `${productCount} listed` : "",
+      hint: "List what your business sells on the Products page.",
+      link: { screen: "products" },
+    },
     {
       id: "digital",
       label: "Digital presence",

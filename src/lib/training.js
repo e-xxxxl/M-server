@@ -110,6 +110,7 @@ export async function participantsOf(opportunity, scope) {
       assessment: record?.assessment?.result ? { result: record.assessment.result, score: record.assessment.score, note: record.assessment.note, at: record.assessment.at } : null,
       completedAt: record?.completedAt ?? null,
       certificateCode: record?.certificate?.code ?? null,
+      certificateWithdrawnOn: record?.certificate?.code ? null : (record?.revoked?.at(-1)?.revokedAt ?? null),
       missing: a.status === "Approved" ? missingForCompletion(opportunity, record) : [],
     };
   });
@@ -177,9 +178,11 @@ export async function markAttendance(opportunity, { sessionId, marks }) {
   }
   const applications = await participantApplications(opportunity, marks.map((m) => m.applicationId), (i) => `marks.${i}.applicationId`);
   for (const a of applications.values()) if (a.status === "Completed") throw notEditable();
+  const session = opportunity.training.sessions.find((s) => idOf(s._id) === sessionId);
   for (const m of marks) {
     const record = await recordFor(applications.get(m.applicationId));
     const entry = record.attendance.find((x) => idOf(x.session) === sessionId);
+    const changed = !entry || entry.present !== m.present;
     if (entry) {
       entry.present = m.present;
       entry.at = new Date();
@@ -187,6 +190,19 @@ export async function markAttendance(opportunity, { sessionId, marks }) {
       record.attendance.push({ session: sessionId, present: m.present });
     }
     await record.save();
+    // The owner is told what was recorded, once: marking the same thing again says nothing new.
+    if (changed) {
+      await notify(
+        record.owner,
+        {
+          type: "application",
+          title: `Attendance recorded as ${m.present ? "present" : "absent"}: ${opportunity.title}`.slice(0, 120),
+          body: session?.title ?? "",
+          link: "/dashboard/training/",
+        },
+        { bulk: true },
+      );
+    }
   }
 }
 
@@ -197,13 +213,14 @@ export async function recordAssessment(opportunity, { applicationId, result, sco
   const record = await recordFor(application);
   record.assessment = { result, score, note, at: new Date() };
   await record.save();
+  await notify(record.owner, { type: "application", title: `Assessment result for ${opportunity.title}: ${result}`.slice(0, 120), body: "", link: "/dashboard/training/" });
 }
 
 /** A new code, retried in the very unlikely event that it already exists. */
 async function freshCode() {
   for (let i = 0; i < 5; i += 1) {
     const code = newCertificateCode();
-    if (!(await TrainingRecord.exists({ "certificate.code": code }))) return code;
+    if (!(await TrainingRecord.exists({ $or: [{ "certificate.code": code }, { "revoked.code": code }] }))) return code;
   }
   throw new ApiError(500, "server_error", "Could not create a certificate code. Please try again.");
 }
@@ -228,6 +245,46 @@ export async function completeParticipant(opportunity, applicationId, note, acto
     link: "/dashboard/training/",
   });
   return record;
+}
+
+/** Moves the current certificate to the withdrawn list. */
+function withdrawCurrent(record, reason, actor) {
+  record.revoked.push({ code: record.certificate.code, issuedAt: record.certificate.issuedAt, revokedAt: new Date(), reason, by: actor?._id });
+  record.certificate = { code: undefined, issuedAt: undefined };
+}
+
+async function completedRecord(opportunity, applicationId) {
+  const application = await Application.findOne({ _id: applicationId, opportunity: opportunity._id, status: "Completed" });
+  const record = application ? await TrainingRecord.findOne({ application: application._id }) : null;
+  if (!application || !record) throw new ApiError(404, "not_found", "Not found.");
+  return record;
+}
+
+/** Withdraws a certificate. The code keeps resolving, but says it is no longer valid. The participant stays completed. */
+export async function revokeCertificate(opportunity, applicationId, reason, actor) {
+  const record = await completedRecord(opportunity, applicationId);
+  if (!record.certificate?.code) throw new ApiError(409, "no_certificate", "This participant has no valid certificate to withdraw.");
+  withdrawCurrent(record, reason, actor);
+  await record.save();
+  await notify(record.owner, { type: "application", title: `Your certificate was withdrawn: ${opportunity.title}`.slice(0, 120), body: "", link: "/dashboard/training/" });
+  return record;
+}
+
+/** Issues a new certificate with a new code. A current certificate is withdrawn first (as replaced), so only one is ever valid. */
+export async function reissueCertificate(opportunity, applicationId, reason, actor) {
+  const record = await completedRecord(opportunity, applicationId);
+  if (record.certificate?.code) withdrawCurrent(record, reason || "Replaced by a new certificate.", actor);
+  record.certificate = { code: await freshCode(), issuedAt: new Date() };
+  await record.save();
+  await notify(record.owner, { type: "application", title: `Your new certificate is ready: ${opportunity.title}`.slice(0, 120), body: `Certificate ${record.certificate.code}.`, link: "/dashboard/training/" });
+  return record;
+}
+
+/** The participants of a training as CSV rows, as the viewer may see them (a provider sees only what each owner agreed to share). */
+export async function participantRows(opportunity, scope) {
+  const sessions = opportunity.training?.sessions ?? [];
+  const people = await participantsOf(opportunity, scope);
+  return { sessions, people };
 }
 
 // ------------------------------------------------------------------ the owner
@@ -263,6 +320,8 @@ export async function ownerTrainings(ownerId) {
       assessment: record?.assessment?.result ? { result: record.assessment.result, score: record.assessment.score, note: record.assessment.note } : null,
       completedAt: record?.completedAt ?? null,
       certificate: record?.certificate?.code ? { code: record.certificate.code, issuedAt: record.certificate.issuedAt } : null,
+      // When a certificate was withdrawn and not replaced. The owner is told in a notification too.
+      certificateWithdrawnOn: record?.certificate?.code ? null : (record?.revoked?.at(-1)?.revokedAt ?? null),
     });
   }
   return items;
@@ -270,19 +329,25 @@ export async function ownerTrainings(ownerId) {
 
 /** What anyone with a certificate code may check: who it was issued to, for what, by whom and when. Nothing else. */
 export async function certificateByCode(value) {
-  const record = await TrainingRecord.findOne({ "certificate.code": normalizeCertificateCode(value) });
+  const code = normalizeCertificateCode(value);
+  const record = await TrainingRecord.findOne({ $or: [{ "certificate.code": code }, { "revoked.code": code }] });
   if (!record) return null;
+  const withdrawn = record.revoked.find((r) => r.code === code) ?? null;
+  const issuedAt = withdrawn ? withdrawn.issuedAt : record.certificate.issuedAt;
   const [application, opportunity, owner] = await Promise.all([Application.findById(record.application), Opportunity.findById(record.opportunity), User.findById(record.owner).select("fullName")]);
   if (!opportunity || !owner) return null;
   const business = application?.snapshot?.businessName ?? (await Business.findOne({ owner: record.owner }).select("businessName"))?.businessName ?? "";
   return {
-    code: record.certificate.code,
+    code,
+    // "valid", or "revoked" for a certificate that was withdrawn or replaced. The reason is never shown.
+    status: withdrawn ? "revoked" : "valid",
+    revokedOn: withdrawn ? withdrawn.revokedAt : null,
     holderName: owner.fullName,
     businessName: business,
     training: opportunity.title,
     provider: opportunity.provider,
     mode: opportunity.training?.mode ?? null,
-    issuedAt: record.certificate.issuedAt,
+    issuedAt,
     completedOn: record.completedAt,
   };
 }

@@ -252,7 +252,7 @@ describe("business profile and dashboard", () => {
     assert.equal(res.json.insights.progress.total, 26);
     assert.equal(res.json.insights.progress.completed, 15, "the 15 required fields are filled at sign-up");
     const ids = res.json.insights.nextActions.map((a) => a.id);
-    for (const id of ["cac", "tin", "bank", "funding", "branches", "digital"]) assert.ok(ids.includes(id), id);
+    for (const id of ["cac", "tin", "bank", "opportunities", "branches", "digital"]) assert.ok(ids.includes(id), id);
   });
 
   it("updates the profile and the next actions shrink as details are added", async () => {

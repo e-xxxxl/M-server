@@ -33,11 +33,24 @@ const trainingRecordSchema = new mongoose.Schema(
       code: { type: String, default: undefined },
       issuedAt: { type: Date, default: undefined },
     },
+    // Certificates that were withdrawn or replaced. The code stays on file so anyone who checks it is told it is no longer valid.
+    revoked: [
+      {
+        _id: false,
+        code: { type: String, required: true },
+        issuedAt: { type: Date },
+        revokedAt: { type: Date, required: true },
+        reason: { type: String, maxlength: 200, default: "" },
+        by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      },
+    ],
   },
   { timestamps: true },
 );
 
 // A certificate code is unique, and only records that have one are indexed.
 trainingRecordSchema.index({ "certificate.code": 1 }, { unique: true, partialFilterExpression: { "certificate.code": { $type: "string" } } });
+
+trainingRecordSchema.index({ "revoked.code": 1 }, { unique: true, partialFilterExpression: { "revoked.code": { $type: "string" } } });
 
 export const TrainingRecord = mongoose.models.TrainingRecord ?? mongoose.model("TrainingRecord", trainingRecordSchema);

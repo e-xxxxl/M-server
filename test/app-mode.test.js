@@ -270,7 +270,7 @@ describe("reference data", () => {
     for (const key of ["businessTypes", "sectors", "states", "ownerRoles", "ownershipStructures", "annualRevenues", "existingLoans", "fundingNeeds", "yesNo", "verificationStatuses"]) {
       assert.deepEqual(data[key], options[key], key);
     }
-    assert.deepEqual(data.opportunityTypes, ["Funding", "Grant", "Loan", "Training", "Support"]);
+    assert.deepEqual(data.opportunityTypes, ["Opportunity", "Grant", "Loan", "Training", "Support"]);
     assert.ok(data.applicationStatuses.includes("More Information Required"));
     assert.deepEqual(data.sharingCategories.map((c) => c.key), ["summary", "contact", "profile", "documents"]);
     assert.equal(data.sharingCategories[0].required, true);

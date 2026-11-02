@@ -109,10 +109,12 @@ export async function runReminders(now = new Date()) {
 }
 
 /** Starts the reminder job: a first pass a minute after start, then every `intervalMinutes`. Returns a function that stops it. */
-export function startReminderScheduler({ intervalMinutes = 60 } = {}) {
+export function startReminderScheduler(reminders = {}) {
+  const { intervalMinutes = 60 } = reminders;
   let running = false;
   const tick = async () => {
-    if (running) return;
+    // The super admin can switch reminders off and on while the server runs: the setting is read on every pass.
+    if (running || reminders.enabled === false) return;
     running = true;
     try {
       await runReminders();

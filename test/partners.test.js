@@ -74,7 +74,7 @@ describe("organisations and partner logins", () => {
     assert.equal((await call("GET", "/api/admin/organisations", { cookie: superAdmin, origin: null })).status, 200);
   });
 
-  it("validates types, offers the government ones, offers training providers, keeps funding partners for later, and refuses duplicate names", async () => {
+  it("validates types, offers the government ones, offers training providers, keeps opportunity partners for later, and refuses duplicate names", async () => {
     const make = (body) => call("POST", "/api/admin/organisations", { cookie: admin, body });
     const stamp = Date.now();
     const ministry = await make({ name: `Ministry ${stamp}`, type: "Government Ministry" });
@@ -82,7 +82,7 @@ describe("organisations and partner logins", () => {
     assert.equal((await make({ name: `Agency ${stamp}`, type: "Government Agency" })).status, 201);
     assert.equal((await make({ name: `Bad ${stamp}`, type: "Spaceship" })).status, 422);
     assert.equal((await make({ name: `Train ${stamp}`, type: "Training Provider" })).status, 201);
-    assert.equal((await make({ name: `Fund ${stamp}`, type: "Funding Partner" })).status, 422);
+    assert.equal((await make({ name: `Fund ${stamp}`, type: "Opportunity Partner" })).status, 422);
     assert.equal((await make({ name: "", type: "Bank" })).status, 422);
     assert.equal((await make({ name: `Extra ${stamp}`, type: "Bank", active: false })).status, 422, "no unknown fields");
     const dup = await make({ name: `ministry ${stamp}`, type: "Bank" });
@@ -91,7 +91,7 @@ describe("organisations and partner logins", () => {
     const types = await call("GET", "/api/admin/organisation-types", { cookie: admin, origin: null });
     assert.ok(types.json.available.includes("Government Ministry") && types.json.available.includes("Bank"));
     assert.ok(types.json.available.includes("Training Provider"));
-    assert.deepEqual(types.json.later, ["Funding Partner"]);
+    assert.deepEqual(types.json.later, ["Opportunity Partner"]);
   });
 
   it("a new partner login must replace its temporary password before anything else", async () => {

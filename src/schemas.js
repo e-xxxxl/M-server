@@ -150,6 +150,58 @@ export const notificationSettingsSchema = z
 /** The link in a notification email that stops those emails. */
 export const unsubscribeSchema = z.object({ token: z.string().trim().min(1).max(100) }).strict();
 
+/** The three confirmations for a permanent delete: the super admin's password, a reason, and the name typed out. */
+export const permanentDeleteSchema = z
+  .object({ password: z.string().min(1, "Enter your password.").max(200), reason: text(200), confirm: text(200) })
+  .strict();
+
+/** What the super admin can change in the system settings. null puts a setting back to the server's own value. */
+export const settingsPatchSchema = z
+  .object({
+    registrationFeeNaira: z
+      .union([z.null(), z.number({ message: "Enter the fee in naira." }).min(100, "The fee must be at least ₦100.").max(1_000_000, "The fee cannot be more than ₦1,000,000.")])
+      .optional(),
+    registrationPeriodDays: z.union([z.null(), intInRange(30, 1095)]).optional(),
+    registrationFeeActive: z.union([z.null(), z.boolean({ message: "Choose on or off." })]).optional(),
+    remindersEnabled: z.union([z.null(), z.boolean({ message: "Choose on or off." })]).optional(),
+  })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, "Nothing to update.");
+
+/** A product or service of the business. The price is in naira; an empty price means "not given". */
+const priceSchema = z.preprocess(
+  (v) => (v === "" ? null : typeof v === "string" && /^\d+(\.\d{1,2})?$/.test(v.trim()) ? Number(v.trim()) : v),
+  z.union([z.null(), z.number({ message: "Enter the price as a number." }).min(0, "The price cannot be negative.").max(10_000_000_000, "That price is too large.")]),
+);
+const productKindSchema = oneOf(["Product", "Service"]);
+const yesNo = z.boolean({ message: "Choose yes or no." });
+export const productSchema = z
+  .object({
+    kind: productKindSchema,
+    name: text(100),
+    category: optionalText(60).default(""),
+    description: optionalText(500).default(""),
+    unitPrice: priceSchema.optional().transform((v) => v ?? null),
+    priceUnit: optionalText(30).default(""),
+    capacity: optionalText(120).default(""),
+    exportReady: yesNo.default(false),
+  })
+  .strict();
+/** Changing one: send only what changed, at least one field. */
+export const productPatchSchema = z
+  .object({
+    kind: productKindSchema.optional(),
+    name: text(100).optional(),
+    category: optionalText(60).optional(),
+    description: optionalText(500).optional(),
+    unitPrice: priceSchema.optional(),
+    priceUnit: optionalText(30).optional(),
+    capacity: optionalText(120).optional(),
+    exportReady: yesNo.optional(),
+  })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, "Nothing to update.");
+
 export const accountPatchSchema = z
   .object({ fullName: text(100).optional(), phone: phoneSchema.optional() })
   .strict()

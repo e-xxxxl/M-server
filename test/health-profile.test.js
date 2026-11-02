@@ -141,6 +141,7 @@ describe("the health profile", () => {
         annualRevenue: "R", existingLoans: "No", bankName: "B", fundingNeeds: "F", website: "w.com", verificationStatus: "Verified", nmrepId: "NMREP-2026-000001",
       },
       walletChecklist,
+      2,
     );
     assert.ok(hp.areas.every((a) => a.status === "Complete" && a.done === a.total));
     assert.deepEqual(hp.nextSteps, []);

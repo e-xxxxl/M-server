@@ -46,7 +46,7 @@ export const annualRevenues = [
 export const existingLoans = ["No", "Yes"];
 
 export const fundingNeeds = [
-  "Not looking for funding now",
+  "Not looking for an opportunity now",
   "Less than 1 million naira",
   "1 to 5 million naira",
   "5 to 20 million naira",
