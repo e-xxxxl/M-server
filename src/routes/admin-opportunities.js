@@ -4,7 +4,7 @@ import { openOpportunity } from "../lib/announce.js";
 import { toCsv } from "../lib/csv.js";
 import { evaluate } from "../lib/eligibility.js";
 import { applicationStatuses, reviewTransitions, reviewableStatuses } from "../lib/opportunity-constants.js";
-import { sendDocument, sharedView, visibleDocuments } from "../lib/documents.js";
+import { recordOpen, sendDocument, sharedView, visibleDocuments } from "../lib/documents.js";
 import { applyReview } from "../lib/review.js";
 import { Agent } from "../models/Agent.js";
 import { Application } from "../models/Application.js";
@@ -241,6 +241,7 @@ export function adminOpportunityRoutes({ config }) {
     const doc = docs.find((d) => String(d._id) === parseId(req.params.docId));
     if (!doc) throw new ApiError(404, "not_found", "Not found.");
     await audit(req.user, "document.download", `Downloaded "${doc.title}" (${doc.kind}) from an application`, { type: "application", id: application._id });
+    await recordOpen(doc, { by: "NMREP", purpose: "Application", application: application._id });
     await sendDocument(res, doc);
   });
 

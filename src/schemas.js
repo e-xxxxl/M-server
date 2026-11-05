@@ -163,6 +163,7 @@ export const settingsPatchSchema = z
       .optional(),
     registrationPeriodDays: z.union([z.null(), intInRange(30, 1095)]).optional(),
     registrationFeeActive: z.union([z.null(), z.boolean({ message: "Choose on or off." })]).optional(),
+    paymentGateway: z.union([z.null(), z.enum(["alatpay", "paystack"], { message: "Choose ALATPay or Paystack." })]).optional(),
     remindersEnabled: z.union([z.null(), z.boolean({ message: "Choose on or off." })]).optional(),
   })
   .strict()

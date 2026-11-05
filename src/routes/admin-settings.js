@@ -8,6 +8,7 @@ const labels = {
   registrationFeeNaira: "registration fee amount",
   registrationPeriodDays: "registration period (days)",
   registrationFeeActive: "registration fee on or off",
+  paymentGateway: "payment gateway",
   remindersEnabled: "reminders on or off",
 };
 

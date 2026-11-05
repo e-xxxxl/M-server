@@ -9,8 +9,10 @@ import os from "node:os";
 import path from "node:path";
 import { configureDocumentStorage } from "./lib/document-storage.js";
 import { configurePrembly } from "./lib/prembly.js";
+import { configureAlatpay } from "./lib/alatpay.js";
 import { configurePaystack } from "./lib/paystack.js";
 import { configurePush } from "./lib/push.js";
+import { seedLgas } from "./lib/lgas.js";
 import { applyRenames } from "./lib/renames.js";
 import { loadSettings } from "./lib/settings.js";
 import { backfillPhoneKeys } from "./lib/phone.js";
@@ -42,6 +44,8 @@ console.log("Connected to MongoDB.");
 // What the super admin changed in the system settings is laid over the .env values before anything reads them.
 await loadSettings(config);
 await applyRenames();
+const lgasAdded = await seedLgas();
+if (lgasAdded > 0) console.log(`Loaded ${lgasAdded} local government areas.`);
 
 const mail = configureMailer(config);
 if (!mail.enabled) {
@@ -54,12 +58,14 @@ if (!mail.enabled) {
 
 configurePrembly(config);
 configurePaystack(config);
+configureAlatpay(config);
 configurePush(config);
 if (config.payments.enabled) {
-  console.log(`Registration fee is ON: N${config.payments.registrationFeeNaira} a year through Paystack.${config.payments.secretKey.startsWith("sk_test_") ? " (test key)" : ""}`);
-  if (config.isProd && config.payments.secretKey.startsWith("sk_test_")) console.warn("WARNING: a Paystack TEST key is set in production. Real payments will not work.");
+  const paystackTest = config.payments.gateway === "paystack" && config.payments.secretKey.startsWith("sk_test_");
+  console.log(`Registration fee is ON: N${config.payments.registrationFeeNaira} a year through ${config.payments.gateway === "alatpay" ? "ALATPay (bank transfer)" : "Paystack"}.${paystackTest ? " (test key)" : ""}`);
+  if (config.isProd && paystackTest) console.warn("WARNING: a Paystack TEST key is set in production. Real payments will not work.");
 } else if (config.isProd) {
-  console.warn("WARNING: the registration fee is OFF (PAYSTACK_SECRET_KEY is not set). Owners can use the platform without paying.");
+  console.warn("WARNING: the registration fee is OFF (no payment gateway is set up: set ALATPAY_SECRET_KEY and ALATPAY_BUSINESS_ID, or PAYSTACK_SECRET_KEY). Owners can use the platform without paying.");
 }
 if (!config.notifications.unsubscribeSecret) {
   console.warn("UNSUBSCRIBE_SECRET is not set: the Stop these emails links stop working whenever the server restarts. Set a long random value.");

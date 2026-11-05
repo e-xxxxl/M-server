@@ -4,6 +4,7 @@ import { compareFit, evaluate } from "../lib/eligibility.js";
 import { openOpportunitiesFor, organisationActive } from "../lib/open-opportunities.js";
 import { editable, withdrawable } from "../lib/opportunity-constants.js";
 import { categoryKeys, describeSharing, sharingCategories } from "../lib/sharing.js";
+import { documentsSharingNow } from "../lib/documents.js";
 import { profileFieldNames, idParamSchema } from "../schemas.js";
 import { applicationSaveSchema, notificationReadSchema, opportunityQuerySchema } from "../schemas-opportunities.js";
 import { Application } from "../models/Application.js";
@@ -137,7 +138,7 @@ export function opportunityRoutes({ config }) {
   // Save a draft, or save and submit. Needs an open opportunity, a business that meets every required requirement,
   // and (to submit) the owner's agreement to share their business summary with the organisation.
   applications.post("/", async (req, res) => {
-    const { opportunityId, message, submit, consent, documentIds, answers } = applicationSaveSchema.parse(req.body);
+    const { opportunityId, message, submit, consent, documentIds, documentsShareDays, answers } = applicationSaveSchema.parse(req.body);
     const opportunity = await Opportunity.findById(opportunityId);
     if (!opportunity || ["Draft", "Pending Approval"].includes(opportunity.status)) throw new ApiError(404, "not_found", "Not found.");
     const org = await organisationOf(opportunity);
@@ -257,6 +258,7 @@ export function opportunityRoutes({ config }) {
         purpose: `Application for "${opportunity.title}"`.slice(0, 200),
         categories: categoryKeys.filter((k) => consent[k] === true),
         documents: attach,
+        documentsExpireAt: attach.length > 0 && documentsShareDays ? new Date(Date.now() + documentsShareDays * 24 * 60 * 60 * 1000) : null,
       });
     }
     res.status(201).json({ application: application.toJSON() });
@@ -283,14 +285,26 @@ export function opportunityRoutes({ config }) {
   });
 
   // ----------------------------------------------------------------- consents
+  // One agreement as the owner sees it: what it covers, and whether the documents are really being shared right now.
+  const consentView = (c) => ({
+    ...c.toJSON(),
+    documentsSharing: documentsSharingNow(c),
+    categoryDetails: c.categories.map((k) => ({ key: k, label: sharingCategories[k]?.label ?? k, description: sharingCategories[k]?.description ?? "" })),
+  });
   consents.get("/", async (req, res) => {
     const rows = await ConsentRecord.find({ owner: req.user._id }).sort({ grantedAt: -1 }).limit(200);
-    res.json({
-      items: rows.map((c) => ({
-        ...c.toJSON(),
-        categoryDetails: c.categories.map((k) => ({ key: k, label: sharingCategories[k]?.label ?? k, description: sharingCategories[k]?.description ?? "" })),
-      })),
-    });
+    res.json({ items: rows.map(consentView) });
+  });
+
+  // Stops sharing the documents of one application now, without withdrawing the application.
+  consents.post("/:id/stop-documents", async (req, res) => {
+    const parsed = idParamSchema.safeParse(req.params.id);
+    const consent = parsed.success ? await ConsentRecord.findOne({ _id: parsed.data, owner: req.user._id }) : null;
+    if (!consent) throw new ApiError(404, "not_found", "Not found.");
+    if (!documentsSharingNow(consent)) throw new ApiError(409, "not_sharing", "These documents are not being shared now.");
+    consent.documentsExpireAt = new Date();
+    await consent.save();
+    res.json({ consent: consentView(consent) });
   });
 
   // ------------------------------------------------------------ notifications

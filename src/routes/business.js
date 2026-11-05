@@ -2,6 +2,7 @@ import { Router } from "express";
 import { Business } from "../models/Business.js";
 import { applyComplianceRules } from "../lib/compliance.js";
 import { buildInsights } from "../lib/insights.js";
+import { checkLocation } from "../lib/lgas.js";
 import { ApiError } from "../middleware/errors.js";
 import { requirePaidRegistration } from "../middleware/paid.js";
 import { requireAuth, requireRole } from "../middleware/security.js";
@@ -29,6 +30,10 @@ export function businessRoutes({ config }) {
       throw new ApiError(422, "validation", "Nothing to update.", { _: "Nothing to update." });
     }
     const business = await own(req);
+    // Changing the state or the area: the area must belong to the state (a stored area that no longer fits has to be chosen again).
+    if (patch.state !== undefined || patch.lga !== undefined) {
+      patch.lga = await checkLocation({ state: patch.state ?? business.state, lga: patch.lga ?? business.lga });
+    }
     Object.assign(business, patch);
     applyComplianceRules(business, patch);
     await business.save();

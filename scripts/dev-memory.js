@@ -19,6 +19,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { configureDocumentStorage } from "../src/lib/document-storage.js";
+import { seedLgas } from "../src/lib/lgas.js";
 import { configureMailer } from "../src/lib/mailer.js";
 import { configurePrembly, createPrembly, setPrembly } from "../src/lib/prembly.js";
 import { hashPassword } from "../src/lib/crypto.js";
@@ -70,6 +71,7 @@ mongoose.set("strictQuery", true);
 
 const mongod = await MongoMemoryServer.create({ instance: { launchTimeout: 90_000 } });
 await mongoose.connect(mongod.getUri("nmrep"));
+await seedLgas();
 console.log("In-memory MongoDB started. Data will be lost when this stops.");
 
 // A throwaway super admin so the admin portal can be tried at once. The password is random, shown

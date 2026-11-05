@@ -4,6 +4,7 @@ import { Business } from "../models/Business.js";
 import { ConsentRecord } from "../models/ConsentRecord.js";
 import { Device } from "../models/Device.js";
 import { Document } from "../models/Document.js";
+import { DocumentAccess } from "../models/DocumentAccess.js";
 import { EmailToken } from "../models/EmailToken.js";
 import { Notification } from "../models/Notification.js";
 import { Product } from "../models/Product.js";
@@ -35,6 +36,7 @@ export async function deleteOwnerData(user, { reason = "Account deleted" } = {})
   const documents = await Document.find({ owner: user._id }).select("storageKey");
   for (const doc of documents) await documentStorage.remove(doc.storageKey);
   await removed("documents", () => Document.deleteMany({ owner: user._id }));
+  await DocumentAccess.deleteMany({ owner: user._id });
 
   const products = await Product.find({ owner: user._id });
   for (const product of products) for (const image of product.images ?? []) await documentStorage.remove(image.storageKey);

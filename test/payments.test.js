@@ -65,10 +65,10 @@ const verify = (o, reference) => call("POST", "/api/payments/registration/verify
 describe("the registration fee gate", () => {
   it("is shown in the reference data and in every sign-up and sign-in answer, and holds an unpaid owner back", async () => {
     const reference = await (await fetch(`${ctx.base}/api/reference`)).json();
-    assert.deepEqual(reference.registrationFee, { required: true, amount: 1000, currency: "NGN" });
+    assert.deepEqual(reference.registrationFee, { required: true, amount: 1000, currency: "NGN", gateway: "paystack" });
 
     const o = await owner();
-    assert.deepEqual(o.registration, { required: true, paid: false, paidUntil: null, amount: 1000, currency: "NGN", canRenew: false });
+    assert.deepEqual(o.registration, { required: true, paid: false, paidUntil: null, amount: 1000, currency: "NGN", gateway: "paystack", canRenew: false });
 
     for (const path of ["/api/dashboard", "/api/business", "/api/opportunities", "/api/applications", "/api/documents", "/api/verification", "/api/health-profile", "/api/training", "/api/consents"]) {
       const res = await get(o, path);

@@ -1,3 +1,5 @@
+import { DocumentAccess } from "../models/DocumentAccess.js";
+import { notify } from "../models/Notification.js";
 import mongoose from "mongoose";
 import { ApiError } from "../middleware/errors.js";
 import { ConsentRecord } from "../models/ConsentRecord.js";
@@ -73,25 +75,61 @@ export function downloadName(doc) {
   return `${safe}.${EXTENSION[doc.mime]}`;
 }
 
+/** True while an agreement is really sharing its documents: not ended, has documents, and the end date has not passed. */
+export function documentsSharingNow(consent, now = new Date()) {
+  if (!consent || consent.revokedAt) return false;
+  if (!consent.categories.includes("documents") || consent.documents.length === 0) return false;
+  return !consent.documentsExpireAt || consent.documentsExpireAt > now;
+}
+
 /** Who each of these documents is currently shared with (active agreements only), keyed by document id. */
 export async function sharesOf(documentIds) {
   const consents = await ConsentRecord.find({ revokedAt: null, documents: mongoose.trusted({ $in: documentIds }) }).sort({ grantedAt: -1 });
   const shares = new Map();
   for (const c of consents) {
+    if (!documentsSharingNow(c)) continue;
     for (const id of c.documents) {
       const key = String(id);
       if (!documentIds.some((d) => String(d) === key)) continue;
       const list = shares.get(key) ?? [];
-      list.push({ application: String(c.application), with: c.sharedWith, purpose: c.purpose, since: c.grantedAt });
+      list.push({ application: String(c.application), with: c.sharedWith, purpose: c.purpose, since: c.grantedAt, until: c.documentsExpireAt ?? null });
       shares.set(key, list);
     }
   }
   return shares;
 }
 
-/** A document as its owner sees it. */
-export function ownerView(doc, shares = []) {
-  return { ...doc.toJSON(), sensitive: sensitiveKinds.includes(doc.kind), sharedWith: shares };
+/** A document as its owner sees it, with who is sharing it now and the last few times someone else opened it. */
+export function ownerView(doc, shares = [], opened = []) {
+  return { ...doc.toJSON(), sensitive: sensitiveKinds.includes(doc.kind), sharedWith: shares, opened };
+}
+
+/** The last few times each of these documents was opened by an organisation or NMREP, newest first, keyed by document id. */
+export async function opensOf(documentIds, perDocument = 5) {
+  const rows = await DocumentAccess.find({ document: mongoose.trusted({ $in: documentIds }) }).sort({ at: -1 }).limit(Math.max(1, documentIds.length) * perDocument * 2);
+  const opens = new Map();
+  for (const r of rows) {
+    const key = String(r.document);
+    const list = opens.get(key) ?? [];
+    if (list.length < perDocument) list.push({ by: r.by, purpose: r.purpose, at: r.at });
+    opens.set(key, list);
+  }
+  return opens;
+}
+
+/**
+ * Records that someone opened a document, and tells the owner. The owner is told once a day at most for the same
+ * organisation and document, so reading a file twice does not send two notices. The notice names the organisation and
+ * the kind of document, never its title; a sensitive kind is only called "one of your documents", because a notification
+ * can appear on a lock screen.
+ */
+export async function recordOpen(doc, { by, purpose, application = null }) {
+  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const told = await DocumentAccess.exists({ document: doc._id, by, at: mongoose.trusted({ $gte: dayAgo }) });
+  await DocumentAccess.create({ document: doc._id, owner: doc.owner, by, purpose, application });
+  if (told) return;
+  const what = sensitiveKinds.includes(doc.kind) ? "one of your documents" : `your ${doc.kind}`;
+  await notify(doc.owner, { type: "application", title: `${by} opened ${what}`.slice(0, 120), body: "", link: "/dashboard/documents/" });
 }
 
 /** A document as an organisation or staff member sees it: what it is, never who it is stored under. */
@@ -107,7 +145,7 @@ export const kindsInfo = () => documentKinds.map((kind) => ({ kind, sensitive: s
  */
 export async function visibleDocuments(application) {
   const consent = await ConsentRecord.findOne({ application: application._id, revokedAt: null }).sort({ grantedAt: -1 });
-  if (!consent || !consent.categories.includes("documents") || consent.documents.length === 0) return [];
+  if (!documentsSharingNow(consent)) return [];
   const docs = await Document.find({ _id: mongoose.trusted({ $in: consent.documents }), owner: application.owner });
   return docs;
 }

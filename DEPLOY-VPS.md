@@ -674,7 +674,33 @@ What to know:
 - Deleting an account deletes its files from the disk.
 - **Product pictures use the same private, encrypted storage.** Owners can add up to 3 pictures (JPEG or PNG, 3 MB each) to each product or service. They need the same `DOCUMENT_ENCRYPTION_KEY` and folder as above: without the key the picture controls are hidden, and the nightly backup of `/var/lib/nmrep/documents` already covers them. A larger `client_max_body_size` than the 8m set for documents is not needed.
 
-### 10.8 The registration fee (Paystack), optional
+### 10.8 The registration fee (ALATPay or Paystack), optional
+
+Every business owner pays ₦1,000 a year. It is taken through **one gateway at a time**: ALATPay (bank transfer to a one-time account number) or Paystack (card and bank on Paystack's page). You can set up both and the **super admin chooses which is in use** in the admin portal (Settings, "Payment gateway"); with no choice made, ALATPay is used when it is set up, otherwise Paystack. The fee is **off** until the gateway in use has its keys.
+
+#### ALATPay
+
+1. Create and get your ALATPay business approved at https://alatpay.ng (onboarding portal). Set up your ALATPay PIN: Settings, then View, then Set Up PIN.
+2. In the ALATPay dashboard open Settings, Business, View (it asks for the PIN). Copy the **Secret Key** and the **Business ID**. (The Public Key is for web plugins and is not used.)
+3. In the same place, Edit the business and set the **webhook URL** to `https://api.nmrep.ng/api/webhooks/alatpay`, then Update Details. ALATPay tells the server about each completed payment there. The documentation shows no signature, so the server never believes the message: it only uses the transaction id in it and asks ALATPay itself before recording anything.
+4. Add to `/opt/nmrep/shared/.env` (no spaces, no quotes), then restart:
+
+   ```
+   ALATPAY_SECRET_KEY=the_secret_key_from_alatpay
+   ALATPAY_BUSINESS_ID=the_business_id_from_alatpay
+   ```
+
+   ```bash
+   sudo systemctl restart nmrep-api
+   sudo journalctl -u nmrep-api -n 10 --no-pager      # "Registration fee is ON: N1000 a year through ALATPay (bank transfer)."
+   ```
+
+What to know about ALATPay:
+- It takes **bank transfers** (a one-time account number for the exact amount, good for 24 hours). Its documentation shows no hosted card page, and its card API is only for premium merchants, so owners who want to pay by card need Paystack.
+- The server accepts a transfer only when ALATPay says the transaction is `completed` and the amount, currency, order id and business id all match. Any other word keeps the payment pending.
+- If the server log says `ALATPay refused the request: HTTP 401`, the secret key or the business id is wrong.
+
+#### Paystack
 
 Every business owner pays ₦1,000 a year through Paystack. It is **off** until you set a Paystack secret key.
 
@@ -699,7 +725,7 @@ What to know:
 - With a **test** key the server prints a warning on start: real payments do not work until the live key is set. Use only Paystack's test cards.
 - Nothing about cards ever reaches the NMREP server or the website: the payer pays on Paystack's own page.
 - Remove the key (or leave it unset) to switch the fee off again; nobody is blocked then.
-- **The super admin can also change the fee from the admin portal** (Settings): the amount, how many days one payment lasts, and a switch to pause the fee without removing the key. A change applies at once, survives a restart and is written to the Activity log. The values in `.env` are the starting point; Settings can put them back. The Paystack key itself is never shown or changed there.
+- **The super admin can also change the fee from the admin portal** (Settings): which gateway is in use (ALATPay or Paystack), the amount, how many days one payment lasts, and a switch to pause the fee without removing the keys. A change applies at once, survives a restart and is written to the Activity log. The values in `.env` are the starting point; Settings can put them back. The Paystack key itself is never shown or changed there.
 - Reminders can be switched off and on from the same Settings page.
 
 ### 10.9 Push notifications, "Stop these emails" links and reminders

@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import express, { Router } from "express";
 import { z } from "zod";
-import { registrationState, settlePayment, startRegistrationPayment } from "../lib/payments.js";
+import { openTransfer, registrationState, settlePayment, startRegistrationPayment, transferView } from "../lib/payments.js";
 import { validSignature } from "../lib/paystack.js";
 import { ApiError } from "../middleware/errors.js";
 import { requireAuth, requireRole } from "../middleware/security.js";
@@ -16,11 +16,22 @@ export function paymentRoutes({ config }) {
   router.use(requireAuth(config), requireRole("msme_owner"));
 
   router.get("/registration", async (req, res) => {
+    // A bank transfer that arrived while the owner was away is recorded now, so the page shows the real state.
+    const waiting = await Payment.find({ user: req.user._id, provider: "alatpay", status: "pending" }).limit(3);
+    for (const w of waiting) await settlePayment(config, w.reference, { userId: req.user._id }).catch(() => null);
+    const user = waiting.length > 0 ? ((await User.findById(req.user._id)) ?? req.user) : req.user;
     const latest = await Payment.find({ user: req.user._id }).sort({ createdAt: -1 }).limit(10);
-    res.json({ registration: registrationState(req.user, config), payments: latest.map((p) => p.toJSON()) });
+    const open = config.payments.gateway === "alatpay" ? await openTransfer(req.user._id, Math.round(config.payments.registrationFeeNaira * 100)) : null;
+    res.json({
+      registration: registrationState(user, config),
+      // An ALATPay payment the owner can still complete (so a page that was closed can show the account again), or null.
+      pending: open ? { gateway: "alatpay", reference: open.reference, amount: config.payments.registrationFeeNaira, currency: "NGN", transfer: transferView(open) } : null,
+      payments: latest.map((p) => p.toJSON()),
+    });
   });
 
-  // Returns the Paystack page to send the owner to. The app opens it in a browser view; the website goes there directly.
+  // Starts a payment. Paystack: returns the page to send the owner to (the app opens it in a browser view). ALATPay: returns
+  // the bank account to transfer to (`transfer`), and the owner is checked with /verify until it arrives.
   router.post("/registration/initialize", async (req, res) => {
     const started = await startRegistrationPayment(config, req.user);
     res.status(201).json(started);
@@ -37,6 +48,26 @@ export function paymentRoutes({ config }) {
   });
 
   return router;
+}
+
+/**
+ * ALATPay tells the server about a payment here when it completes. The documentation shows no signature, so nothing in the
+ * message is believed: only its transaction id is used, to find our payment, and the payment is then checked with ALATPay
+ * (and only accepted if that check agrees, with the amount, order and business). Always answers 200.
+ */
+export function alatpayWebhook({ config }) {
+  return [
+    express.json({ limit: "50kb", strict: false }),
+    async (req, res) => {
+      const data = req.body?.Value?.Data ?? req.body?.data ?? {};
+      const id = String(data.Id ?? data.id ?? data.TransactionId ?? "").slice(0, 80);
+      if (id) {
+        const payment = await Payment.findOne({ provider: "alatpay", providerRef: id });
+        if (payment) await settlePayment(config, payment.reference).catch((err) => console.error("ALATPay webhook check failed:", err?.code ?? err?.name));
+      }
+      res.json({ received: true });
+    },
+  ];
 }
 
 /**

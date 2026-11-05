@@ -70,7 +70,7 @@ describe("system settings", () => {
     assert.equal(res.json.registrationFee.envAmountNaira, 1000);
 
     const reference = await call("GET", "/api/reference", {});
-    assert.deepEqual(reference.json.registrationFee, { required: true, amount: 2500, currency: "NGN" });
+    assert.deepEqual(reference.json.registrationFee, { required: true, amount: 2500, currency: "NGN", gateway: "paystack" });
 
     const asked = [];
     setPaystack({ enabled: true, async initialize(a) { asked.push(a); return { authorizationUrl: "https://checkout.paystack.test/x", reference: a.reference }; }, async verify() { return { found: false }; } });

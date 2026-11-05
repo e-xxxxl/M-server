@@ -2,12 +2,13 @@ import crypto from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
 import { documentStorage } from "../lib/document-storage.js";
-import { kindsInfo, ownerView, readUpload, sendDocument, sharesOf, sniffMime } from "../lib/documents.js";
+import { kindsInfo, opensOf, ownerView, readUpload, sendDocument, sharesOf, sniffMime } from "../lib/documents.js";
 import { Application } from "../models/Application.js";
 import { Business } from "../models/Business.js";
 import { VerificationSubmission } from "../models/VerificationSubmission.js";
 import { ConsentRecord } from "../models/ConsentRecord.js";
 import { Document, documentKinds } from "../models/Document.js";
+import { DocumentAccess } from "../models/DocumentAccess.js";
 import { ApiError } from "../middleware/errors.js";
 import { requirePaidRegistration } from "../middleware/paid.js";
 import { requireAuth, requireRole } from "../middleware/security.js";
@@ -35,11 +36,12 @@ export function documentRoutes({ config }) {
   router.get("/", async (req, res) => {
     const docs = await Document.find({ owner: req.user._id }).sort({ createdAt: -1 });
     const shares = await sharesOf(docs.map((d) => d._id));
+    const opens = await opensOf(docs.map((d) => d._id));
     res.json({
       available: documentStorage.enabled,
       limits: limits(),
       kinds: kindsInfo(),
-      items: docs.map((d) => ownerView(d, shares.get(String(d._id)) ?? [])),
+      items: docs.map((d) => ownerView(d, shares.get(String(d._id)) ?? [], opens.get(String(d._id)) ?? [])),
     });
   });
 
@@ -92,6 +94,7 @@ export function documentRoutes({ config }) {
     if (!doc) throw new ApiError(404, "not_found", "Not found.");
     await documentStorage.remove(doc.storageKey);
     await doc.deleteOne();
+    await DocumentAccess.deleteMany({ document: doc._id });
     // A deleted document can no longer be seen by anyone it was shared with.
     await Application.updateMany({ owner: req.user._id }, { $pull: { documents: doc._id } });
     await ConsentRecord.updateMany({ owner: req.user._id }, { $pull: { documents: doc._id } });

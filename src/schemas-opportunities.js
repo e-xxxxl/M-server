@@ -210,6 +210,12 @@ export const applicationSaveSchema = z
     consent: consentSchema.optional(),
     // Documents from the wallet to attach when submitting. Needs consent.documents.
     documentIds: z.array(objectId).max(10, "Attach 10 documents or fewer.").default([]),
+    // How long the documents stay shared: 7, 30, 90 or 180 days. Leave it out (or null) to share until the application is withdrawn.
+    documentsShareDays: z
+      .number({ message: "Choose 7, 30, 90 or 180 days." })
+      .refine((v) => [7, 30, 90, 180].includes(v), "Choose 7, 30, 90 or 180 days.")
+      .nullable()
+      .optional(),
     // Answers to the opportunity's questions. Leave it out to keep the answers already saved.
     answers: z.array(z.object({ questionId: objectId, answer: optionalText(maxAnswerLength) }).strict()).max(maxQuestions).optional(),
   })

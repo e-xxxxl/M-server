@@ -1,4 +1,5 @@
 import { Setting } from "../models/Setting.js";
+import { gatewayLabels, gatewayNames, isConfigured, pickGateway } from "./gateways.js";
 
 /**
  * System settings the super admin can change from the admin portal. The server's own settings (.env) are the starting
@@ -18,6 +19,7 @@ function envDefaults(config) {
       registrationFeeNaira: config.payments.registrationFeeNaira,
       registrationPeriodDays: config.payments.periodDays,
       registrationFeeActive: true,
+      paymentGateway: config.payments.gateway || null,
       remindersEnabled: config.reminders.enabled,
     });
   }
@@ -30,8 +32,10 @@ export function applyToConfig(config, stored = {}) {
   const pick = (name) => (stored[name] === null || stored[name] === undefined ? base[name] : stored[name]);
   config.payments.registrationFeeNaira = pick("registrationFeeNaira");
   config.payments.periodDays = pick("registrationPeriodDays");
-  // The fee needs a Paystack key AND not to be paused. Pausing never needs the key to be removed.
-  config.payments.enabled = Boolean(config.payments.secretKey) && pick("registrationFeeActive");
+  // The gateway in use: the choice (the super admin's, else the server's own), or the first configured one.
+  config.payments.gateway = pickGateway(config, pick("paymentGateway"));
+  // The fee needs the gateway in use to be configured AND not to be paused. Pausing never needs a key to be removed.
+  config.payments.enabled = isConfigured(config, config.payments.gateway) && pick("registrationFeeActive");
   config.reminders.enabled = pick("remindersEnabled");
 }
 
@@ -52,9 +56,19 @@ export async function currentSettings(config) {
       amountNaira: config.payments.registrationFeeNaira,
       periodDays: config.payments.periodDays,
       active: changed("registrationFeeActive") ? doc.registrationFeeActive : true,
-      // Whether a Paystack key is set on the server, and which kind. The key itself is never sent anywhere.
-      keySet: Boolean(secretKey),
-      keyMode: secretKey ? (secretKey.startsWith("sk_live_") ? "live" : "test") : null,
+      // Which gateway is in use, whether that was chosen here, and which are set up on the server. No key ever leaves it.
+      gateway: config.payments.gateway,
+      gatewayChanged: changed("paymentGateway"),
+      envGateway: pickGateway(config, base.paymentGateway),
+      gateways: gatewayNames.map((name) => ({
+        name,
+        label: gatewayLabels[name],
+        configured: isConfigured(config, name),
+        mode: name === "paystack" && secretKey ? (secretKey.startsWith("sk_live_") ? "live" : "test") : null,
+      })),
+      // Kept for the key of the gateway in use: is it set, and (Paystack only) test or live.
+      keySet: isConfigured(config, config.payments.gateway),
+      keyMode: config.payments.gateway === "paystack" && secretKey ? (secretKey.startsWith("sk_live_") ? "live" : "test") : null,
       // True when owners are really being asked to pay right now.
       inForce: config.payments.enabled,
       envAmountNaira: base.registrationFeeNaira,
@@ -74,7 +88,7 @@ export async function currentSettings(config) {
 export async function updateSettings(config, patch, actor) {
   const set = {};
   const names = [];
-  for (const name of ["registrationFeeNaira", "registrationPeriodDays", "registrationFeeActive", "remindersEnabled"]) {
+  for (const name of ["registrationFeeNaira", "registrationPeriodDays", "registrationFeeActive", "paymentGateway", "remindersEnabled"]) {
     if (patch[name] !== undefined) {
       set[name] = patch[name];
       names.push(name);

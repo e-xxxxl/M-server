@@ -10,7 +10,7 @@ import { newReferralCode, newTemporaryPassword } from "../lib/codes.js";
 import { hashPassword } from "../lib/crypto.js";
 import { issueNmrepId } from "../lib/ids.js";
 import { duplicatesOf, latestChecks, reviewerView, verificationEnabled } from "../lib/verification.js";
-import { sendDocument, sharedView } from "../lib/documents.js";
+import { recordOpen, sendDocument, sharedView } from "../lib/documents.js";
 import { submittedDocuments } from "../lib/verification-documents.js";
 import { Product } from "../models/Product.js";
 import { sendProductImage } from "./products.js";
@@ -213,6 +213,7 @@ export function adminRoutes({ config }) {
     const doc = documents.find((d) => String(d._id) === parseId(req.params.docId));
     if (!doc) throw new ApiError(404, "not_found", "Not found.");
     await audit(req.user, "document.download", `Downloaded "${doc.title}" (${doc.kind}) for verification of "${business.businessName}"`, { type: "business", id: business._id });
+    await recordOpen(doc, { by: "NMREP", purpose: "Verification" });
     await sendDocument(res, doc);
   });
 

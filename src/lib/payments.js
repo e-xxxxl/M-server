@@ -6,6 +6,8 @@ import { Payment } from "../models/Payment.js";
 import { User } from "../models/User.js";
 import { sendPaymentReceipt } from "./account-emails.js";
 import { emailSettings } from "./mailer.js";
+import { alatpay, bankNameFor } from "./alatpay.js";
+import { isConfigured } from "./gateways.js";
 import { paystack } from "./paystack.js";
 
 /**
@@ -31,19 +33,70 @@ export function registrationState(user, config, now = new Date()) {
     paidUntil: until,
     amount: config.payments.registrationFeeNaira,
     currency: "NGN",
+    // The gateway the owner will pay through: "alatpay" (bank transfer) or "paystack" (card and bank on Paystack's page).
+    gateway: config.payments.gateway,
     canRenew: required && current && until.getTime() - now.getTime() <= RENEW_WINDOW_DAYS * DAY,
   };
 }
 
-/** Creates a pending payment and returns where to send the payer. */
+const unavailable = () => new ApiError(503, "payments_unavailable", "Payments are not available right now. Please try again later.");
+
+/** The transfer details the payer needs, as the API shows them. */
+export const transferView = (payment) =>
+  payment.provider === "alatpay" && payment.transfer?.accountNumber
+    ? { bankName: bankNameFor(payment.transfer.bankCode), bankCode: payment.transfer.bankCode ?? "", accountNumber: payment.transfer.accountNumber, expiresAt: payment.transfer.expiresAt ?? null }
+    : null;
+
+/** The payment an ALATPay payer can still complete: pending, and its virtual account has not expired. */
+export const openTransfer = (userId, amountKobo, now = new Date()) =>
+  Payment.findOne({ user: userId, provider: "alatpay", status: "pending", amountKobo, "transfer.expiresAt": mongoose.trusted({ $gt: new Date(now.getTime() + 10 * 60 * 1000) }) }).sort({ createdAt: -1 });
+
+/** Splits a full name for ALATPay, which wants a first and a last name. */
+const nameParts = (fullName) => {
+  const [first, ...rest] = String(fullName ?? "").trim().split(/\s+/);
+  return { firstName: first || "NMREP", lastName: rest.join(" ") || first || "Owner" };
+};
+
+/** Starts the payment on the ALATPay: a virtual account to transfer to. An unexpired one for the same amount is reused. */
+async function startAlatpay(config, user) {
+  const amountKobo = feeKobo(config);
+  const again = await openTransfer(user._id, amountKobo);
+  if (again) return { payment: again, reused: true };
+  const reference = `NMREG-${crypto.randomBytes(8).toString("hex").toUpperCase()}`;
+  const payment = await Payment.create({ user: user._id, reference, amountKobo, provider: "alatpay" });
+  const started = await alatpay.initialize({
+    // ALATPay order ids are plain letters and digits in its examples, so the dash is left out.
+    orderId: reference.replace(/[^A-Za-z0-9]/g, ""),
+    amountNaira: config.payments.registrationFeeNaira,
+    email: user.email,
+    phone: user.phone,
+    ...nameParts(user.fullName),
+  });
+  if (started.unavailable) {
+    await Payment.updateOne({ _id: payment._id }, { $set: { status: "failed" } });
+    throw unavailable();
+  }
+  payment.providerRef = started.transactionId;
+  payment.transfer = { bankCode: started.bankCode, accountNumber: started.accountNumber, expiresAt: started.expiresAt };
+  await payment.save();
+  return { payment, reused: false };
+}
+
+/** Creates a pending payment and returns where to send the payer (Paystack) or where to transfer to (ALATPay). */
 export async function startRegistrationPayment(config, user) {
-  if (!config.payments.enabled || !paystack.enabled) throw new ApiError(503, "payments_unavailable", "Payments are not available right now. Please try again later.");
+  const gateway = config.payments.gateway;
+  if (!config.payments.enabled || !isConfigured(config, gateway)) throw unavailable();
   const state = registrationState(user, config);
   if (state.paid && !state.canRenew) throw new ApiError(409, "already_paid", "Your registration fee is already paid.");
 
+  if (gateway === "alatpay") {
+    const { payment } = await startAlatpay(config, user);
+    return { gateway, reference: payment.reference, amount: config.payments.registrationFeeNaira, currency: "NGN", authorizationUrl: null, transfer: transferView(payment) };
+  }
+
   const reference = `NMREG-${crypto.randomBytes(8).toString("hex").toUpperCase()}`;
   const amountKobo = feeKobo(config);
-  const payment = await Payment.create({ user: user._id, reference, amountKobo });
+  const payment = await Payment.create({ user: user._id, reference, amountKobo, provider: "paystack" });
   const started = await paystack.initialize({
     email: user.email,
     amountKobo,
@@ -54,9 +107,9 @@ export async function startRegistrationPayment(config, user) {
   });
   if (started.unavailable) {
     await Payment.updateOne({ _id: payment._id }, { $set: { status: "failed" } });
-    throw new ApiError(503, "payments_unavailable", "Payments are not available right now. Please try again later.");
+    throw unavailable();
   }
-  return { authorizationUrl: started.authorizationUrl, reference, amount: config.payments.registrationFeeNaira, currency: "NGN" };
+  return { gateway, reference, amount: config.payments.registrationFeeNaira, currency: "NGN", authorizationUrl: started.authorizationUrl, transfer: null };
 }
 
 /**
@@ -69,7 +122,11 @@ export async function settlePayment(config, reference, { userId = null, now = ne
   if (!payment || (userId && String(payment.user) !== String(userId))) return { outcome: "not_found" };
   if (payment.status === "success") return { outcome: "success", payment, alreadyRecorded: true };
 
-  const r = await paystack.verify(payment.reference);
+  // Ask the gateway that took the payment, whichever gateway is in use now.
+  const r =
+    payment.provider === "alatpay"
+      ? await alatpay.verify({ transactionId: payment.providerRef, orderId: payment.reference.replace(/[^A-Za-z0-9]/g, "") })
+      : await paystack.verify(payment.reference);
   if (r.unavailable) throw new ApiError(503, "payments_unavailable", "We could not check the payment just now. Please try again in a moment.");
   if (!r.found) return { outcome: "pending", payment };
 
@@ -104,7 +161,9 @@ export async function settlePayment(config, reference, { userId = null, now = ne
     return { outcome: "success", payment: claimed };
   }
 
-  if (["failed", "abandoned", "reversed"].includes(r.status)) {
+  // A transfer account that has expired and was never paid is over: the payer asks for a new one.
+  const expired = payment.provider === "alatpay" && payment.transfer?.expiresAt && payment.transfer.expiresAt <= now;
+  if (["failed", "abandoned", "reversed"].includes(r.status) || (expired && r.status !== "success")) {
     await Payment.updateOne({ _id: payment._id, status: "pending" }, { $set: { status: "failed" } });
     return { outcome: "failed", payment };
   }

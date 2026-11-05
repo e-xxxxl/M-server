@@ -57,7 +57,16 @@ export function loadConfig(env = process.env) {
     payments: {
       secretKey: env.PAYSTACK_SECRET_KEY ?? "",
       baseUrl: (env.PAYSTACK_BASE_URL ?? "https://api.paystack.co").replace(/\/+$/, ""),
-      enabled: Boolean(env.PAYSTACK_SECRET_KEY),
+      // ALATPay (bank transfer to a virtual account). The secret key and the business id are both needed.
+      alatpay: {
+        secretKey: env.ALATPAY_SECRET_KEY ?? "",
+        businessId: env.ALATPAY_BUSINESS_ID ?? "",
+        baseUrl: (env.ALATPAY_BASE_URL ?? "https://apibox.alatpay.ng").replace(/\/+$/, ""),
+      },
+      // Which gateway takes the fee: "alatpay" or "paystack". Left out, the first configured one is used (ALATPay first, then Paystack).
+      // The super admin can change it in the admin portal (Settings).
+      gateway: env.PAYMENT_GATEWAY === "paystack" || env.PAYMENT_GATEWAY === "alatpay" ? env.PAYMENT_GATEWAY : env.ALATPAY_SECRET_KEY && env.ALATPAY_BUSINESS_ID ? "alatpay" : "paystack",
+      enabled: Boolean(env.PAYSTACK_SECRET_KEY || (env.ALATPAY_SECRET_KEY && env.ALATPAY_BUSINESS_ID)),
       registrationFeeNaira: Number(env.REGISTRATION_FEE_NAIRA ?? 1000),
       // How long one payment keeps the registration valid.
       periodDays: Number(env.REGISTRATION_PERIOD_DAYS ?? 365),

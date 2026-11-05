@@ -12,6 +12,7 @@ import { ApiError } from "../middleware/errors.js";
 import { clearSessionCookie, isAppClient, readSessionToken, requireAuth, setSessionCookie } from "../middleware/security.js";
 import { forgotPasswordSchema, loginSchema, registerSchema, resetPasswordSchema, unsubscribeSchema, verifyEmailSchema } from "../schemas.js";
 import { registrationState } from "../lib/payments.js";
+import { checkLocation } from "../lib/lgas.js";
 import { phoneKey } from "../lib/phone-key.js";
 import { userIdFromUnsubscribeToken } from "../lib/unsubscribe.js";
 
@@ -56,6 +57,8 @@ export function authRoutes({ config, limiters }) {
     const body = registerSchema.parse(req.body);
     const { password, ...account } = body.account;
     applyComplianceRules(body.business, body.business, "business.");
+    // The area must belong to the state, and is stored with its proper spelling.
+    body.business.lga = await checkLocation(body.business, "business.");
 
     if (await User.exists({ email: account.email })) throw emailTaken();
     if (await User.exists({ phoneKey: phoneKey(account.phone) })) throw phoneTaken();

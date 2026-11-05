@@ -8,7 +8,9 @@ import { accountRoutes } from "./routes/account.js";
 import { adminRoutes } from "./routes/admin.js";
 import { adminOpportunityRoutes } from "./routes/admin-opportunities.js";
 import { adminOrganisationRoutes } from "./routes/admin-organisations.js";
+import { adminLocationRoutes } from "./routes/admin-locations.js";
 import { adminPermanentRoutes } from "./routes/admin-permanent.js";
+import { locationRoutes } from "./routes/locations.js";
 import { adminSettingsRoutes } from "./routes/admin-settings.js";
 import { adminToolsRoutes } from "./routes/admin-tools.js";
 import { opportunityRoutes } from "./routes/opportunities.js";
@@ -25,7 +27,7 @@ import { errorHandler, notFound } from "./middleware/errors.js";
 import { createLimiters, requireAllowedOrigin } from "./middleware/security.js";
 import { configureUnsubscribe } from "./lib/unsubscribe.js";
 import { deviceRoutes } from "./routes/devices.js";
-import { paymentRoutes, paystackWebhook } from "./routes/payments.js";
+import { alatpayWebhook, paymentRoutes, paystackWebhook } from "./routes/payments.js";
 
 /** Builds the Express app. Kept separate from server.js so tests can run it against an in-memory database. */
 export function createApp(config, { log = true } = {}) {
@@ -66,6 +68,7 @@ export function createApp(config, { log = true } = {}) {
   app.use("/api", limiters.general);
   // Paystack's webhook is signed over the exact bytes it sends, so it reads the raw body, before the JSON reader.
   app.post("/api/webhooks/paystack", ...paystackWebhook({ config }));
+  app.post("/api/webhooks/alatpay", ...alatpayWebhook({ config }));
   app.use(express.json({ limit: "20kb" }));
   app.use(cookieParser());
   app.use("/api", requireAllowedOrigin(config.corsOrigins));
@@ -74,7 +77,7 @@ export function createApp(config, { log = true } = {}) {
   app.get("/api/reference", (_req, res) => {
     res.set("Cache-Control", "public, max-age=3600");
     // The registration fee is shown on the sign-up button, so the website and the app can read it before anyone signs up.
-    res.json({ ...referenceData(), registrationFee: { required: config.payments.enabled, amount: config.payments.registrationFeeNaira, currency: "NGN" } });
+    res.json({ ...referenceData(), registrationFee: { required: config.payments.enabled, amount: config.payments.registrationFeeNaira, currency: "NGN", gateway: config.payments.gateway } });
   });
 
   app.get("/api/health", (_req, res) => {
@@ -95,6 +98,8 @@ export function createApp(config, { log = true } = {}) {
   app.use("/api/admin", adminOrganisationRoutes({ config }));
   app.use("/api/admin/settings", adminSettingsRoutes({ config }));
   app.use("/api/admin/permanent", adminPermanentRoutes({ config, limiters }));
+  app.use("/api/admin/locations", adminLocationRoutes({ config }));
+  app.use("/api/lgas", locationRoutes());
   app.use("/api/admin", adminToolsRoutes({ config }));
   app.use("/api/partner", partnerRoutes({ config }));
   const owner = opportunityRoutes({ config });

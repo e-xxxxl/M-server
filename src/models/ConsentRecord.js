@@ -18,6 +18,9 @@ const consentSchema = new mongoose.Schema({
   categories: { type: [String], required: true },
   // The documents shared, when the "documents" category was agreed to. Empty otherwise.
   documents: { type: [mongoose.Schema.Types.ObjectId], default: [] },
+  // When the sharing of the documents ends by itself (the owner chose 7, 30, 90 or 180 days), or ended early because the
+  // owner stopped it. null means the documents stay shared until the application is withdrawn.
+  documentsExpireAt: { type: Date, default: null },
   grantedAt: { type: Date, default: Date.now },
   revokedAt: { type: Date, default: null },
   revokedReason: { type: String, maxlength: 100, default: "" },
