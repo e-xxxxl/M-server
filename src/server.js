@@ -74,14 +74,14 @@ const phoneKeys = await backfillPhoneKeys();
 if (phoneKeys > 0) console.log(`Added a phone sign-in key to ${phoneKeys} existing account${phoneKeys === 1 ? "" : "s"}.`);
 if (!configureDocumentStorage(config).enabled) {
   if (config.isProd) {
-    console.warn("WARNING: the document wallet is OFF (DOCUMENT_ENCRYPTION_KEY is not set, or is not 32 bytes as base64). Owners will see \"Documents are not available right now\". Run npm run document-key and add the lines it prints to the server's settings.");
+    console.warn("WARNING: document storage is OFF (DOCUMENT_ENCRYPTION_KEY is not set, or is not 32 bytes as base64). Owners will see \"Documents are not available right now\". Run npm run document-key and add the lines it prints to the server's settings.");
   } else {
     // On a development machine, try the wallet at once with a throwaway key and folder. Never done in production.
     configureDocumentStorage(
       { documents: { ...config.documents, encryptionKey: crypto.randomBytes(32).toString("base64"), dir: fs.mkdtempSync(path.join(os.tmpdir(), "nmrep-dev-docs-")) } },
       { root: "/" },
     );
-    console.warn("The document wallet is on with a TEMPORARY key and folder (development only). Files are lost when this stops. Run npm run document-key and add the lines to backend/.env to keep them.");
+    console.warn("Document storage is on with a TEMPORARY key and folder (development only). Files are lost when this stops. Run npm run document-key and add the lines to backend/.env to keep them.");
   }
 }
 if (!verificationEnabled(config)) {

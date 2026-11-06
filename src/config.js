@@ -109,6 +109,8 @@ export function loadConfig(env = process.env) {
       maxFiles: Number(env.DOCUMENT_MAX_FILES ?? 20),
       maxTotalBytes: Number(env.DOCUMENT_MAX_TOTAL_MB ?? 40) * 1024 * 1024,
     },
+    // The NMREP inbox that receives the website contact form. Messages are also kept in the admin portal.
+    contact: { inbox: env.CONTACT_EMAIL ?? "contact@nmrep.org" },
     // Email through Resend. Without RESEND_API_KEY and EMAIL_FROM, email is switched off and everything else still works.
     email: {
       apiKey: env.RESEND_API_KEY ?? "",

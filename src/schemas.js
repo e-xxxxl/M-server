@@ -95,7 +95,12 @@ function buildShape(withDefaults) {
 }
 
 /** Every profile field name, in display order. The Yes or No answers are not counted as separate details. */
-export const profileFieldNames = Object.keys(buildShape(true)).filter((name) => name !== "hasCac" && name !== "hasTin");
+/**
+ * Details that are no longer asked for. The API still accepts them (apps written earlier may send them) but they are not
+ * counted in the profile progress and are not shared: the business bank, the size of opportunity sought and the digital presence.
+ */
+export const retiredFieldNames = ["bankName", "fundingNeeds", "website", "facebook", "instagram", "x", "tiktok"];
+export const profileFieldNames = Object.keys(buildShape(true)).filter((name) => name !== "hasCac" && name !== "hasTin" && !retiredFieldNames.includes(name));
 
 export const businessSchema = z.object(buildShape(true)).strict();
 
@@ -106,11 +111,24 @@ const naira = z.preprocess(
 );
 const pickMany = (values, max) => z.array(oneOf(values), { message: "Choose from the list." }).max(max, `Choose ${max} or fewer.`).transform((v) => [...new Set(v)]);
 
+const yesNoOrEmpty = z.union([oneOf(o.yesNo), z.literal("")]);
+/** A coordinate in decimal degrees, or empty for none. A digit string is accepted. */
+const coordinate = (label, min, max) =>
+  z.preprocess(
+    (v) => (v === "" ? null : typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v.trim()) ? Number(v.trim()) : v),
+    z.union([z.null(), z.number({ message: `Enter the ${label} as a number, for example 6.5244.` }).min(min, `This ${label} is not in Nigeria.`).max(max, `This ${label} is not in Nigeria.`)]),
+  );
+
 /** The details that are not part of sign-up: they can only be added or changed afterwards. */
 const extraShape = {
   description: optionalText(500),
   monthlyRevenue: naira,
-  assetsValue: naira,
+  womenOwned: yesNoOrEmpty,
+  youthOwned: yesNoOrEmpty,
+  disabilityOwned: yesNoOrEmpty,
+  exports: yesNoOrEmpty,
+  latitude: coordinate("latitude", 4, 14),
+  longitude: coordinate("longitude", 2.5, 15),
   skillGaps: pickMany(skillAreas, 8),
   preferredFormat: z.union([oneOf(o.trainingFormats), z.literal("")]),
   interests: pickMany(interestAreas, 13),

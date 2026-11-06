@@ -249,7 +249,7 @@ describe("business profile and dashboard", () => {
     const { cookie } = await signUp();
     const res = await call("GET", "/api/dashboard", { cookie, origin: null });
     assert.equal(res.status, 200);
-    assert.equal(res.json.insights.progress.total, 26);
+    assert.equal(res.json.insights.progress.total, 19);
     assert.equal(res.json.insights.progress.completed, 15, "the 15 required fields are filled at sign-up");
     assert.deepEqual(res.json.insights.nextActions, [], "recommended next actions were removed");
   });

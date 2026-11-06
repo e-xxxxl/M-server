@@ -41,7 +41,7 @@ const fitSummary = (fit) => ({ label: fit.label, met: fit.met, total: fit.total,
 function snapshotOf(business) {
   const json = business.toJSON();
   const snapshot = {};
-  for (const name of [...profileFieldNames, "hasCac", "hasTin", "verificationStatus", "nmrepId", "description", "businessSize", "monthlyRevenue", "assetsValue"]) snapshot[name] = json[name] ?? null;
+  for (const name of [...profileFieldNames, "hasCac", "hasTin", "verificationStatus", "nmrepId", "description", "businessSize", "monthlyRevenue", "womenOwned", "youthOwned", "disabilityOwned", "exports", "latitude", "longitude"]) snapshot[name] = json[name] ?? null;
   return snapshot;
 }
 
@@ -204,14 +204,14 @@ export function opportunityRoutes({ config }) {
       if (attach.length > 0) {
         const owned = new Set((await Document.find({ _id: mongoose.trusted({ $in: attach }), owner: req.user._id }).select("_id")).map((d) => String(d._id)));
         const missing = attach.findIndex((id) => !owned.has(id));
-        if (missing >= 0) throw new ApiError(422, "validation", "Please check the highlighted fields.", { [`documentIds.${missing}`]: "This document is not in your wallet." });
+        if (missing >= 0) throw new ApiError(422, "validation", "Please check the highlighted fields.", { [`documentIds.${missing}`]: "This document is not in your documents." });
       }
       // The kinds of document this opportunity asks for must be among the ones attached.
       if ((opportunity.requiredDocuments ?? []).length > 0) {
         const attachedKinds = new Set(attach.length ? (await Document.find({ _id: mongoose.trusted({ $in: attach }), owner: req.user._id }).select("kind")).map((d) => d.kind) : []);
         const lacking = opportunity.requiredDocuments.filter((k) => !attachedKinds.has(k));
         if (lacking.length > 0) {
-          throw new ApiError(422, "documents_required", `This opportunity needs these documents: ${lacking.join(", ")}. Add them to your wallet and attach them.`, {
+          throw new ApiError(422, "documents_required", `This opportunity needs these documents: ${lacking.join(", ")}. Add them to your documents and attach them.`, {
             documentIds: `Attach: ${lacking.join(", ")}.`,
           });
         }

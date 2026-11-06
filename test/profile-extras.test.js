@@ -86,13 +86,13 @@ describe("the extra profile details", () => {
     const o = await owner();
     const res = await call("PATCH", "/api/business", {
       cookie: o.cookie,
-      body: { description: "We bake and deliver bread to schools.", monthlyRevenue: 450000, assetsValue: "2500000", preferredFormat: "Online", skillGaps: ["Digital marketing", "Digital marketing"], interests: ["Digital marketing"] },
+      body: { description: "We bake and deliver bread to schools.", monthlyRevenue: 450000, preferredFormat: "Online", skillGaps: ["Digital marketing", "Digital marketing"], interests: ["Digital marketing"] },
     });
     assert.equal(res.status, 200, JSON.stringify(res.json));
     const b = res.json.business;
     assert.equal(b.description, "We bake and deliver bread to schools.");
     assert.equal(b.monthlyRevenue, 450000);
-    assert.equal(b.assetsValue, 2500000);
+    assert.ok(!("assetsValue" in b), "the value of assets is no longer asked for");
     assert.equal(b.preferredFormat, "Online");
     assert.deepEqual(b.skillGaps, ["Digital marketing"]);
     assert.deepEqual(b.interests, ["Digital marketing"]);
@@ -113,7 +113,7 @@ describe("the extra profile details", () => {
     for (const body of [
       { monthlyRevenue: -5 },
       { monthlyRevenue: "lots" },
-      { assetsValue: 99_000_000_000 },
+      { monthlyRevenue: 99_000_000_000 },
       { preferredFormat: "By post" },
       { skillGaps: ["Juggling"] },
       { interests: ["Juggling"] },
@@ -194,5 +194,42 @@ describe("the logo", () => {
   it("needs a signed in owner", async () => {
     assert.equal((await putLogo(null, png())).status, 401);
     assert.equal((await fetchPath("/api/business/logo")).status, 401);
+  });
+});
+
+describe("ownership flags and the map position", () => {
+  it("are saved, can be emptied, and are checked", async () => {
+    const o = await owner();
+    const res = await call("PATCH", "/api/business", { cookie: o.cookie, body: { womenOwned: "Yes", youthOwned: "No", disabilityOwned: "", exports: "Yes", latitude: "6.5244", longitude: 3.3792 } });
+    assert.equal(res.status, 200, JSON.stringify(res.json));
+    const b = res.json.business;
+    assert.deepEqual([b.womenOwned, b.youthOwned, b.disabilityOwned, b.exports, b.latitude, b.longitude], ["Yes", "No", "", "Yes", 6.5244, 3.3792]);
+    const cleared = await call("PATCH", "/api/business", { cookie: o.cookie, body: { latitude: "", longitude: "", womenOwned: "" } });
+    assert.equal(cleared.json.business.latitude, null);
+    assert.equal(cleared.json.business.womenOwned, "");
+    for (const body of [{ womenOwned: "Maybe" }, { latitude: 51.5 }, { longitude: -0.12 }, { latitude: "north" }]) {
+      assert.equal((await call("PATCH", "/api/business", { cookie: o.cookie, body })).status, 422, JSON.stringify(body));
+    }
+  });
+
+  it("work as eligibility rules and show up in how to become eligible", async () => {
+    const o = await owner();
+    const make = async (key) => {
+      const c = await call("POST", "/api/admin/opportunities", {
+        cookie: admin,
+        body: { title: `For ${key}`, provider: "NMREP", type: "Grant", description: "A programme.", criteria: [{ key, level: "required" }] },
+      });
+      assert.equal(c.status, 201, c.text);
+      await call("PATCH", `/api/admin/opportunities/${c.json.opportunity.id}`, { cookie: admin, body: { status: "Open" } });
+      return c.json.opportunity.id;
+    };
+    const id = await make("womenOwned");
+    let detail = (await call("GET", `/api/opportunities/${id}`, { cookie: o.cookie })).json;
+    assert.equal(detail.fit.checks[0].met, false);
+    assert.equal(detail.howToQualify.steps[0].key, "womenOwned");
+    await call("PATCH", "/api/business", { cookie: o.cookie, body: { womenOwned: "Yes" } });
+    detail = (await call("GET", `/api/opportunities/${id}`, { cookie: o.cookie })).json;
+    assert.equal(detail.fit.checks[0].met, true);
+    assert.equal(detail.howToQualify.ready, true);
   });
 });

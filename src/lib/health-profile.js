@@ -20,8 +20,6 @@ const SECTIONS = [
   { id: "financial", title: "Financial", fields: ["annualRevenue", "existingLoans"] },
 ];
 
-const DIGITAL = ["website", "facebook", "instagram", "x", "tiktok"];
-
 /** Every kind of wallet document except "Other", which has no meaning as a gap. */
 export const walletChecklist = documentKinds.filter((k) => k !== "Other");
 
@@ -94,19 +92,11 @@ export function buildHealthProfile(business, documentKinds = [], productCount = 
       hint: "List what your business sells on the Products page.",
       link: { screen: "products" },
     },
-    {
-      id: "digital",
-      label: "Digital presence",
-      done: DIGITAL.some((f) => filled(business[f])),
-      detail: "",
-      hint: "Add your website or a social media handle.",
-      link: profile("digital"),
-    },
   ]);
 
   const documents = area(
     "documents",
-    "Documents in your wallet",
+    "Your documents",
     walletChecklist.map((kind) => ({
       id: kind.toLowerCase().replace(/[^a-z]+/g, "-"),
       label: kind,

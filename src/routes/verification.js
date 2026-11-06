@@ -63,7 +63,7 @@ export function verificationRoutes({ config }) {
     }
     const owned = new Set((await Document.find({ _id: mongoose.trusted({ $in: ids }), owner: req.user._id }).select("_id")).map((d) => String(d._id)));
     const missing = ids.findIndex((id) => !owned.has(id));
-    if (missing >= 0) throw new ApiError(422, "validation", "Please check the highlighted fields.", { [`documentIds.${missing}`]: "This document is not in your wallet." });
+    if (missing >= 0) throw new ApiError(422, "validation", "Please check the highlighted fields.", { [`documentIds.${missing}`]: "This document is not in your documents." });
 
     await VerificationSubmission.findOneAndUpdate(
       { business: business._id },

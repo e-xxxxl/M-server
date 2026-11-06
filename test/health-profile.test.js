@@ -63,13 +63,13 @@ describe("the health profile", () => {
     }
   });
 
-  it("reflects the profile: registration, information and the digital presence change as details are added", async () => {
+  it("reflects the profile: registration and information change as details are added", async () => {
     const o = await owner({ businessType: "Not yet registered with the CAC", cacNumber: "", tin: "" });
     const before = (await call("GET", "/api/health-profile", { cookie: o.cookie })).json;
     assert.equal(item(before, "registration", "registered").done, false);
     assert.equal(item(before, "registration", "cac").done, false);
     assert.equal(item(before, "registration", "tin").done, false);
-    assert.equal(item(before, "information", "digital").done, false);
+    assert.ok(!before.areas.flatMap((a) => a.items).some((i) => i.id === "digital"), "digital presence is not on the checklist any more");
     assert.equal(item(before, "information", "financial").detail, "2 of 2 details", "only the required details count: the revenue band and the loans answer");
     assert.equal(item(before, "information", "identity").done, true);
     assert.equal(item(before, "information", "location").done, true);
@@ -79,10 +79,9 @@ describe("the health profile", () => {
     const after = (await call("GET", "/api/health-profile", { cookie: o.cookie })).json;
     for (const id of ["registered", "cac", "tin"]) assert.equal(item(after, "registration", id).done, true, id);
     assert.equal(area(after, "registration").status, "Complete");
-    assert.equal(item(after, "information", "digital").done, true);
     assert.equal(item(after, "information", "financial").done, true);
     assert.equal(item(after, "information", "operations").done, true);
-    assert.ok(area(after, "information").done > area(before, "information").done);
+    assert.ok(area(after, "registration").done > area(before, "registration").done);
   });
 
   it("shows the verification status in words, and Verified once staff verify", async () => {

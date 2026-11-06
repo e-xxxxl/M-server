@@ -43,8 +43,8 @@ export const sharingCategories = {
     label: "Full business profile",
     required: false,
     description:
-      "Business address, CAC and TIN numbers, owner role, number of branches, bank name, existing loans, the size of opportunity sought, monthly revenue, assets value, website and social media handles.",
-    fields: ["address", "ownerName", "ownerRole", "cacNumber", "tin", "branches", "bankName", "existingLoans", "fundingNeeds", "monthlyRevenue", "assetsValue", "website", "facebook", "instagram", "x", "tiktok"],
+      "Business address, CAC and TIN numbers, owner role, number of branches, bank name, existing loans, monthly revenue, whether the business is women, youth or disability owned or exports, and its map position and social media handles.",
+    fields: ["address", "ownerName", "ownerRole", "cacNumber", "tin", "branches", "existingLoans", "monthlyRevenue", "womenOwned", "youthOwned", "disabilityOwned", "exports", "latitude", "longitude", "facebook", "instagram", "x", "tiktok"],
   },
 };
 
@@ -53,7 +53,7 @@ sharingCategories.documents = {
   label: "Documents you choose",
   required: false,
   description:
-    "Only the documents from your wallet that you tick for this application, for example your CAC certificate. The organisation can open each one while you are sharing. Sharing ends when you withdraw, send a new submission or delete the document.",
+    "Only the documents you tick for this application, for example your CAC certificate. The organisation can open each one while you are sharing. Sharing ends when you withdraw, send a new submission or delete the document.",
   fields: [],
 };
 

@@ -18,6 +18,11 @@ function stepFor(check) {
       return { ...base, title: "Get a Tax Identification Number", detail: "Once you have one, add it to your profile.", link: PROFILE };
     case "verified":
       return { ...base, title: "Get your business verified", detail: "Complete the verification steps. NMREP staff review what you send.", link: VERIFICATION };
+    case "womenOwned":
+    case "youthOwned":
+    case "disabilityOwned":
+    case "exports":
+      return { ...base, title: check.label, detail: check.yours === "Not provided" ? "Answer this under About the business on your profile." : "Your profile says No. If that is wrong, change it under About the business.", link: PROFILE };
     case "yearsInBusiness":
       return { ...base, title: `Be in business for ${check.requirement}`, detail: "If the year you started is wrong on your profile, correct it. Otherwise this one opens to you later.", link: PROFILE };
     default:

@@ -56,7 +56,14 @@ const businessSchema = new mongoose.Schema(
     // More about the business. Optional, and not counted in the profile progress.
     description: str(500),
     monthlyRevenue: money,
-    assetsValue: money,
+    // Who owns the business and whether it exports. Yes, No or empty. Used as eligibility rules; shared only under "profile".
+    womenOwned: str(3),
+    youthOwned: str(3),
+    disabilityOwned: str(3),
+    exports: str(3),
+    // Where the business is, in decimal degrees (inside Nigeria). Shared only under "profile".
+    latitude: { type: Number, default: null, min: 4, max: 14 },
+    longitude: { type: Number, default: null, min: 2.5, max: 15 },
     // Training: what the business needs help with, how it likes to learn, and what interests it.
     skillGaps: { type: [String], default: [] },
     preferredFormat: str(20),

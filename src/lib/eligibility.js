@@ -23,6 +23,10 @@ export const criterionKinds = {
   employees: { kind: "range", label: "Number of employees", read: (b) => b.employees, max: 100000 },
   hasCac: { kind: "yes", label: "Registered with the CAC", read: (b) => b.hasCac || (b.cacNumber ? "Yes" : "") },
   hasTin: { kind: "yes", label: "Has a Tax Identification Number", read: (b) => b.hasTin || (b.tin ? "Yes" : "") },
+  womenOwned: { kind: "yes", label: "Women-owned business", read: (b) => b.womenOwned },
+  youthOwned: { kind: "yes", label: "Youth-owned business", read: (b) => b.youthOwned },
+  disabilityOwned: { kind: "yes", label: "Owned by a person with a disability", read: (b) => b.disabilityOwned },
+  exports: { kind: "yes", label: "Exports products or services", read: (b) => b.exports },
   verified: { kind: "verified", label: "Verified business", read: (b) => b.verificationStatus },
 };
 

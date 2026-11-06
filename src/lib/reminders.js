@@ -55,7 +55,7 @@ export async function runDeadlineReminders(now = new Date()) {
     const left = kind === "deadline-1d" ? "tomorrow" : "in 3 days";
     const applied = new Map((await Application.find({ opportunity: opportunity._id }).select("owner status")).map((a) => [String(a.owner), a.status]));
 
-    for await (const business of Business.find({}).select("owner sector state businessType annualRevenue yearEstablished employees hasCac cacNumber hasTin tin verificationStatus").lean().cursor()) {
+    for await (const business of Business.find({}).select("owner sector state businessType annualRevenue yearEstablished employees hasCac cacNumber hasTin tin womenOwned youthOwned disabilityOwned exports verificationStatus").lean().cursor()) {
       const owner = String(business.owner);
       if (inactive.has(owner)) continue;
       const status = applied.get(owner);

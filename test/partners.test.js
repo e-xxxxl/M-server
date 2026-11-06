@@ -385,7 +385,7 @@ describe("consent and what a partner can see", () => {
     assert.equal(detail.json.applicant.contact.phone, o.phone);
     assert.equal(detail.json.applicant.profile.address, "12 Allen Avenue");
     assert.equal(detail.json.applicant.profile.cacNumber, "RC7654321");
-    assert.equal(detail.json.applicant.profile.bankName, "Secret Bank");
+    assert.ok(!("bankName" in detail.json.applicant.profile), "the business bank is no longer shared");
     const text = JSON.stringify(detail.json);
     assert.ok(!/"(nin|accountNumber|referral)"/i.test(text), "no identity numbers exist to share");
   });

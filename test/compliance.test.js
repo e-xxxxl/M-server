@@ -28,7 +28,7 @@ describe("CAC and TIN are Yes or No questions", () => {
     assert.equal(res.json.business.tin, "");
 
     const dash = await call("GET", "/api/dashboard", { cookie: res.cookie, origin: null });
-    assert.equal(dash.json.insights.progress.total, 26, "the answers are not extra details");
+    assert.equal(dash.json.insights.progress.total, 19, "the answers are not extra details");
     assert.equal(dash.json.insights.progress.completed, 17, "15 required plus CAC and TIN answered");
     assert.deepEqual(dash.json.insights.nextActions, []);
   });
