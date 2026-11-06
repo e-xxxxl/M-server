@@ -55,6 +55,7 @@ export function adminPaymentRoutes({ config }) {
           reference: p.reference,
           provider: p.provider ?? "paystack",
           amount: p.amountKobo / 100,
+          years: p.years ?? 1,
           currency: p.currency,
           status: p.status,
           paidAt: p.paidAt,

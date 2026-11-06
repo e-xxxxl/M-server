@@ -4,6 +4,7 @@ import { notify } from "../models/Notification.js";
 import { VerificationCheck, checkTypes } from "../models/VerificationCheck.js";
 import { ApiError } from "../middleware/errors.js";
 import { matchesAny, phoneTail } from "./name-match.js";
+import { issueNmrepId } from "./ids.js";
 import { prembly } from "./prembly.js";
 
 /**
@@ -30,7 +31,7 @@ export const checkInfo = {
 
 const message = {
   Passed: "Checked and matched.",
-  "Needs review": "We found a record, but it does not clearly match the details in your profile. Check your details, then try again, or wait for NMREP to review it.",
+  "Needs review": "We found a record, but the name on it does not clearly match your details. Write your name or business name exactly as it is on the record, then try again, or wait for NMREP to review it.",
   "Not found": "We could not find a record for this number. Check that it is correct, then try again.",
 };
 
@@ -80,6 +81,8 @@ export function ownerView(check) {
     maskedValue: check.maskedValue,
     checkedAt: check.checkedAt,
     message: message[check.status],
+    // The CAC register is public, so the owner may be told what it shows. This is what to correct when the names differ.
+    ...(check.type === "cac" && check.registeredName ? { registeredName: check.registeredName } : {}),
   };
 }
 
@@ -188,7 +191,23 @@ export async function runCheck({ config, business, user, input }) {
     consentAt: checkInfo[type].needsNumber ? new Date() : null,
   });
 
-  // A passed check puts an unverified business in the review queue. It never grants Verified.
+  // A NIN that the provider confirms and whose name matches verifies the business at once, and issues its NMREP ID. Staff can
+  // still change the status later. A business staff have Rejected or Suspended is never changed by a check.
+  if (type === "nin" && check.status === "Passed" && ["Unverified", "Pending Verification"].includes(business.verificationStatus)) {
+    business.verificationStatus = "Verified";
+    business.verificationHistory.push({ status: "Verified", at: new Date(), note: "NIN confirmed automatically" });
+    if (!business.nmrepId) business.nmrepId = await issueNmrepId();
+    await business.save();
+    await notify(business.owner, {
+      type: "verification",
+      title: "Your business is verified",
+      body: `Your NIN was confirmed. Your NMREP Business ID is ${business.nmrepId}.`,
+      link: "/dashboard/",
+    });
+    return check;
+  }
+
+  // Any other passed check (for example the CAC) puts an unverified business in the review queue.
   if (check.status === "Passed" && business.verificationStatus === "Unverified") {
     business.verificationStatus = "Pending Verification";
     business.verificationHistory.push({ status: "Pending Verification", at: new Date(), note: `Automated check passed: ${checkInfo[type].label}`.slice(0, 200) });
@@ -218,7 +237,8 @@ async function runProvider(type, business, user, value) {
   const r = await prembly.cac({ number: value, companyType: companyTypes[business.businessType], companyName: business.businessName });
   if (r.unavailable) return r;
   if (!r.found) return { status: "Not found", reference: r.reference };
-  const nameMatch = matchesAny(r.company.name, [business.businessName, business.tradingName], { dropCompanyWords: true });
+  // A business name is often registered in the owner's name, so the owner's name counts too.
+  const nameMatch = matchesAny(r.company.name, [business.businessName, business.tradingName, business.ownerName, user.fullName], { dropCompanyWords: true });
   const active = !inactive.test(r.company.status);
   return {
     status: nameMatch && active ? "Passed" : "Needs review",

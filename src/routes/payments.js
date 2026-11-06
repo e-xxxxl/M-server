@@ -9,6 +9,8 @@ import { Payment } from "../models/Payment.js";
 import { User } from "../models/User.js";
 
 const verifySchema = z.object({ reference: z.string().trim().min(1).max(80) }).strict();
+// How many years to pay for: 1 to 10. Leaving it out means 1.
+const initializeSchema = z.object({ years: z.number({ message: "Choose from 1 to 10 years." }).int("Choose from 1 to 10 years.").min(1, "Choose from 1 to 10 years.").max(10, "Choose from 1 to 10 years.").default(1) }).strict();
 
 /** The yearly registration fee, for business owners: what is owed, start a payment, and check one. */
 export function paymentRoutes({ config }) {
@@ -21,11 +23,11 @@ export function paymentRoutes({ config }) {
     for (const w of waiting) await settlePayment(config, w.reference, { userId: req.user._id }).catch(() => null);
     const user = waiting.length > 0 ? ((await User.findById(req.user._id)) ?? req.user) : req.user;
     const latest = await Payment.find({ user: req.user._id }).sort({ createdAt: -1 }).limit(10);
-    const open = config.payments.gateway === "alatpay" ? await openTransfer(req.user._id, Math.round(config.payments.registrationFeeNaira * 100)) : null;
+    const open = config.payments.gateway === "alatpay" ? await openTransfer(req.user._id) : null;
     res.json({
       registration: registrationState(user, config),
       // An ALATPay payment the owner can still complete (so a page that was closed can show the account again), or null.
-      pending: open ? { gateway: "alatpay", reference: open.reference, amount: config.payments.registrationFeeNaira, currency: "NGN", transfer: transferView(open) } : null,
+      pending: open ? { gateway: "alatpay", reference: open.reference, years: open.years ?? 1, amount: open.amountKobo / 100, currency: "NGN", transfer: transferView(open) } : null,
       payments: latest.map((p) => p.toJSON()),
     });
   });
@@ -33,7 +35,8 @@ export function paymentRoutes({ config }) {
   // Starts a payment. Paystack: returns the page to send the owner to (the app opens it in a browser view). ALATPay: returns
   // the bank account to transfer to (`transfer`), and the owner is checked with /verify until it arrives.
   router.post("/registration/initialize", async (req, res) => {
-    const started = await startRegistrationPayment(config, req.user);
+    const { years } = initializeSchema.parse(req.body ?? {});
+    const started = await startRegistrationPayment(config, req.user, years);
     res.status(201).json(started);
   });
 

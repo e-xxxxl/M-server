@@ -112,7 +112,7 @@ export function updateEmail(user, title, url, { body = "", unsubscribeUrl = "" }
 }
 
 /** The receipt for the yearly registration fee. */
-export function paymentReceiptEmail(user, { amount, reference, paidUntil, url, provider = "" }) {
+export function paymentReceiptEmail(user, { amount, reference, paidUntil, url, provider = "", years = 1 }) {
   const money = new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(amount);
   const until = paidUntil.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Lagos" });
   return {
@@ -120,7 +120,7 @@ export function paymentReceiptEmail(user, { amount, reference, paidUntil, url, p
     ...layout({
       greeting: `Hello ${firstName(user)},`,
       paragraphs: [
-        `Thank you. We received your registration fee of ${money}.`,
+        `Thank you. We received your registration fee of ${money}${years > 1 ? ` for ${years} years` : ""}.`,
         `Your registration is paid until ${until}. Payment reference: ${reference}.`,
         // Only the gateway that took the payment is named. Unknown (an older payment) says neither.
         provider === "alatpay"

@@ -9,6 +9,7 @@ import { TrainingRecord } from "../models/TrainingRecord.js";
 import { User } from "../models/User.js";
 import { ConsentRecord } from "../models/ConsentRecord.js";
 import { DOCUMENT_WARNING_DAYS } from "./documents.js";
+import { closeExpiredOpportunities, runSubscriptionReminders, suspendLapsedSubscriptions } from "./subscription.js";
 import { evaluate } from "./eligibility.js";
 
 /**
@@ -125,25 +126,44 @@ export async function runDocumentExpiryWarnings(now = new Date()) {
 }
 
 /** One pass of every reminder job. Never throws: a failure is logged by name only and the next pass tries again. */
-export async function runReminders(now = new Date()) {
+export async function runReminders(now = new Date(), config = null) {
   try {
-    return { deadlines: await runDeadlineReminders(now), sessions: await runSessionReminders(now), documents: await runDocumentExpiryWarnings(now) };
+    return {
+      deadlines: await runDeadlineReminders(now),
+      sessions: await runSessionReminders(now),
+      documents: await runDocumentExpiryWarnings(now),
+      subscriptions: config ? await runSubscriptionReminders(config, now) : 0,
+    };
   } catch (err) {
     console.error("Reminder job failed:", err?.name);
-    return { deadlines: 0, sessions: 0, documents: 0, failed: true };
+    return { deadlines: 0, sessions: 0, documents: 0, subscriptions: 0, failed: true };
+  }
+}
+
+/**
+ * The jobs that keep the platform's own rules, whatever the reminder switch says: close opportunities whose closing date
+ * has come, and suspend businesses whose subscription ended and was not renewed. Never throws.
+ */
+export async function runMaintenance(config, now = new Date()) {
+  try {
+    return { closed: await closeExpiredOpportunities(now), suspended: await suspendLapsedSubscriptions(config, now) };
+  } catch (err) {
+    console.error("Maintenance job failed:", err?.name);
+    return { closed: 0, suspended: 0, failed: true };
   }
 }
 
 /** Starts the reminder job: a first pass a minute after start, then every `intervalMinutes`. Returns a function that stops it. */
-export function startReminderScheduler(reminders = {}) {
+export function startReminderScheduler(reminders = {}, config = null) {
   const { intervalMinutes = 60 } = reminders;
   let running = false;
   const tick = async () => {
-    // The super admin can switch reminders off and on while the server runs: the setting is read on every pass.
-    if (running || reminders.enabled === false) return;
+    if (running) return;
     running = true;
     try {
-      await runReminders();
+      // Closing and suspending always run. Only the reminders can be switched off (by the super admin, while the server runs).
+      if (config) await runMaintenance(config);
+      if (reminders.enabled !== false) await runReminders(new Date(), config);
     } finally {
       running = false;
     }

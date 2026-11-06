@@ -9,6 +9,7 @@ import { emailSettings } from "./mailer.js";
 import { alatpay, bankNameFor } from "./alatpay.js";
 import { isConfigured } from "./gateways.js";
 import { paystack } from "./paystack.js";
+import { restoreAfterRenewal } from "./subscription.js";
 
 /**
  * The yearly registration fee. Every business owner pays it to complete registration, and again each year. Money is
@@ -20,7 +21,8 @@ const DAY = 24 * 60 * 60 * 1000;
 /** From this many days before a paid year ends, the next year can be bought. */
 const RENEW_WINDOW_DAYS = 30;
 
-export const feeKobo = (config) => Math.round(config.payments.registrationFeeNaira * 100);
+export const maxYears = 10;
+export const feeKobo = (config, years = 1) => Math.round(config.payments.registrationFeeNaira * 100) * years;
 
 /** What an owner (or the app) needs to know about the fee. `paid` is true when nothing is owed, including when the fee is off. */
 export function registrationState(user, config, now = new Date()) {
@@ -36,6 +38,8 @@ export function registrationState(user, config, now = new Date()) {
     // The gateway the owner will pay through: "alatpay" (bank transfer) or "paystack" (card and bank on Paystack's page).
     gateway: config.payments.gateway,
     canRenew: required && current && until.getTime() - now.getTime() <= RENEW_WINDOW_DAYS * DAY,
+    // The most years that can be paid for at once. The amount for n years is n times `amount`.
+    maxYears,
   };
 }
 
@@ -48,8 +52,8 @@ export const transferView = (payment) =>
     : null;
 
 /** The payment an ALATPay payer can still complete: pending, and its virtual account has not expired. */
-export const openTransfer = (userId, amountKobo, now = new Date()) =>
-  Payment.findOne({ user: userId, provider: "alatpay", status: "pending", amountKobo, "transfer.expiresAt": mongoose.trusted({ $gt: new Date(now.getTime() + 10 * 60 * 1000) }) }).sort({ createdAt: -1 });
+export const openTransfer = (userId, amountKobo = null, now = new Date()) =>
+  Payment.findOne({ user: userId, provider: "alatpay", status: "pending", ...(amountKobo === null ? {} : { amountKobo }), "transfer.expiresAt": mongoose.trusted({ $gt: new Date(now.getTime() + 10 * 60 * 1000) }) }).sort({ createdAt: -1 });
 
 /** Splits a full name for ALATPay, which wants a first and a last name. */
 const nameParts = (fullName) => {
@@ -58,16 +62,16 @@ const nameParts = (fullName) => {
 };
 
 /** Starts the payment on the ALATPay: a virtual account to transfer to. An unexpired one for the same amount is reused. */
-async function startAlatpay(config, user) {
-  const amountKobo = feeKobo(config);
+async function startAlatpay(config, user, years) {
+  const amountKobo = feeKobo(config, years);
   const again = await openTransfer(user._id, amountKobo);
   if (again) return { payment: again, reused: true };
   const reference = `NMREG-${crypto.randomBytes(8).toString("hex").toUpperCase()}`;
-  const payment = await Payment.create({ user: user._id, reference, amountKobo, provider: "alatpay" });
+  const payment = await Payment.create({ user: user._id, reference, amountKobo, years, provider: "alatpay" });
   const started = await alatpay.initialize({
     // ALATPay order ids are plain letters and digits in its examples, so the dash is left out.
     orderId: reference.replace(/[^A-Za-z0-9]/g, ""),
-    amountNaira: config.payments.registrationFeeNaira,
+    amountNaira: amountKobo / 100,
     email: user.email,
     phone: user.phone,
     ...nameParts(user.fullName),
@@ -83,20 +87,20 @@ async function startAlatpay(config, user) {
 }
 
 /** Creates a pending payment and returns where to send the payer (Paystack) or where to transfer to (ALATPay). */
-export async function startRegistrationPayment(config, user) {
+export async function startRegistrationPayment(config, user, years = 1) {
   const gateway = config.payments.gateway;
   if (!config.payments.enabled || !isConfigured(config, gateway)) throw unavailable();
   const state = registrationState(user, config);
   if (state.paid && !state.canRenew) throw new ApiError(409, "already_paid", "Your registration fee is already paid.");
 
   if (gateway === "alatpay") {
-    const { payment } = await startAlatpay(config, user);
-    return { gateway, reference: payment.reference, amount: config.payments.registrationFeeNaira, currency: "NGN", authorizationUrl: null, transfer: transferView(payment) };
+    const { payment } = await startAlatpay(config, user, years);
+    return { gateway, reference: payment.reference, years: payment.years, amount: payment.amountKobo / 100, currency: "NGN", authorizationUrl: null, transfer: transferView(payment) };
   }
 
   const reference = `NMREG-${crypto.randomBytes(8).toString("hex").toUpperCase()}`;
-  const amountKobo = feeKobo(config);
-  const payment = await Payment.create({ user: user._id, reference, amountKobo, provider: "paystack" });
+  const amountKobo = feeKobo(config, years);
+  const payment = await Payment.create({ user: user._id, reference, amountKobo, years, provider: "paystack" });
   const started = await paystack.initialize({
     email: user.email,
     amountKobo,
@@ -109,7 +113,7 @@ export async function startRegistrationPayment(config, user) {
     await Payment.updateOne({ _id: payment._id }, { $set: { status: "failed" } });
     throw unavailable();
   }
-  return { gateway, reference, amount: config.payments.registrationFeeNaira, currency: "NGN", authorizationUrl: started.authorizationUrl, transfer: null };
+  return { gateway, reference, years, amount: amountKobo / 100, currency: "NGN", authorizationUrl: started.authorizationUrl, transfer: null };
 }
 
 /**
@@ -148,15 +152,16 @@ export async function settlePayment(config, reference, { userId = null, now = ne
     if (user) {
       // Renewing early adds a year to the end of the current one, so nothing already paid for is lost.
       const base = user.registrationPaidUntil && user.registrationPaidUntil > now ? user.registrationPaidUntil : now;
-      user.registrationPaidUntil = new Date(base.getTime() + config.payments.periodDays * DAY);
+      user.registrationPaidUntil = new Date(base.getTime() + config.payments.periodDays * DAY * (payment.years ?? 1));
       await user.save();
+      await restoreAfterRenewal(user._id);
       await notify(user._id, {
         type: "payment",
         title: "Registration fee received",
-        body: `Thank you. Your registration is paid until ${user.registrationPaidUntil.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Lagos" })}.`,
+        body: `Thank you. Your registration for ${payment.years ?? 1} year${(payment.years ?? 1) === 1 ? "" : "s"} is paid until ${user.registrationPaidUntil.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Lagos" })}.`,
         link: "/dashboard/",
       });
-      sendPaymentReceipt(user, { amount: config.payments.registrationFeeNaira, reference: payment.reference, paidUntil: user.registrationPaidUntil, provider: payment.provider });
+      sendPaymentReceipt(user, { amount: payment.amountKobo / 100, years: payment.years ?? 1, reference: payment.reference, paidUntil: user.registrationPaidUntil, provider: payment.provider });
     }
     return { outcome: "success", payment: claimed };
   }

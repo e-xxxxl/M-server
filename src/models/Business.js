@@ -48,6 +48,9 @@ const businessSchema = new mongoose.Schema(
     existingLoans: str(5, true),
     fundingNeeds: str(60),
     // The owner's NIN is asked at sign-up and checked once. Only the last four digits and a keyed fingerprint are kept, never the number.
+    // Set when the business was Suspended because its subscription ended and was not renewed. Renewing restores the status it had.
+    suspendedForSubscription: { type: Boolean, default: false },
+    statusBeforeSuspension: { type: String, default: "" },
     ninMasked: { type: String, maxlength: 20, default: "" },
     ninHash: { type: String, maxlength: 64, default: "", select: false },
     // More about the business. Optional, and not counted in the profile progress.
@@ -103,6 +106,8 @@ const businessSchema = new mongoose.Schema(
         ret.businessSize = businessSizeOf(ret.employees);
         ret.ninProvided = Boolean(ret.ninMasked);
         delete ret.ninHash;
+        delete ret.suspendedForSubscription;
+        delete ret.statusBeforeSuspension;
         // Profiles saved before the Yes or No questions existed: a number on file means Yes.
         if (!ret.hasCac && ret.cacNumber) ret.hasCac = "Yes";
         if (!ret.hasTin && ret.tin) ret.hasTin = "Yes";

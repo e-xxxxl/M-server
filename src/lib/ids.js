@@ -1,15 +1,16 @@
-import { Counter } from "../models/Counter.js";
+import { randomInt } from "node:crypto";
+import { Business } from "../models/Business.js";
 
 /**
- * Issues the next NMREP Business ID, for example NMREP-2026-000184. The counter is
- * incremented atomically, so two admins verifying at the same moment never get the same ID.
+ * Issues a NMREP Business ID, for example NMREP-2026-48201937. The number is random, so it says nothing about when the
+ * business registered or how many came before it. It is checked against the businesses that already have one (and the
+ * database refuses a repeat), so two businesses never share an ID.
  */
 export async function issueNmrepId() {
   const year = new Date().getFullYear();
-  const counter = await Counter.findOneAndUpdate(
-    { _id: `nmrep-id-${year}` },
-    { $inc: { seq: 1 } },
-    { upsert: true, returnDocument: "after" },
-  );
-  return `NMREP-${year}-${String(counter.seq).padStart(6, "0")}`;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const id = `NMREP-${year}-${randomInt(10_000_000, 100_000_000)}`;
+    if (!(await Business.exists({ nmrepId: id }))) return id;
+  }
+  throw new Error("Could not find a free NMREP ID.");
 }

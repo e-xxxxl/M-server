@@ -20,6 +20,8 @@ const paymentSchema = new mongoose.Schema(
       expiresAt: { type: Date, default: undefined },
     },
     purpose: { type: String, enum: ["registration"], default: "registration" },
+    // How many years this payment buys (1 to 10). The amount is the yearly fee times this.
+    years: { type: Number, default: 1, min: 1, max: 10 },
     amountKobo: { type: Number, required: true },
     currency: { type: String, default: "NGN" },
     status: { type: String, enum: paymentStatuses, default: "pending" },

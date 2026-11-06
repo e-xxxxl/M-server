@@ -251,6 +251,8 @@ export function adminRoutes({ config }) {
     }
 
     business.verificationStatus = status;
+    // Staff have decided the status, so it is no longer the automatic one from a lapsed subscription.
+    business.suspendedForSubscription = false;
     business.verificationHistory.push({ status, at: new Date(), note });
     if (status === "Verified" && !business.nmrepId) business.nmrepId = await issueNmrepId();
     await business.save();

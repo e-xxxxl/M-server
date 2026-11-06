@@ -6,7 +6,8 @@ import mongoose from "mongoose";
  */
 const reminderSchema = new mongoose.Schema(
   {
-    opportunity: { type: mongoose.Schema.Types.ObjectId, ref: "Opportunity", required: true },
+    // The opportunity (or agreement) the reminder is about. Subscription reminders have none.
+    opportunity: { type: mongoose.Schema.Types.ObjectId, ref: "Opportunity", default: null },
     owner: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     // "deadline-3d", "deadline-1d" or "session:<session id>".
     kind: { type: String, required: true, maxlength: 60 },

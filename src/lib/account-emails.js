@@ -53,8 +53,8 @@ export function sendPasswordChanged(user) {
   deliver(user, passwordChangedEmail(user, `${emailSettings().appUrl}/login/`));
 }
 
-export function sendPaymentReceipt(user, { amount, reference, paidUntil, provider }) {
-  deliver(user, paymentReceiptEmail(user, { amount, reference, paidUntil, provider, url: `${emailSettings().appUrl}/dashboard/` }));
+export function sendPaymentReceipt(user, { amount, reference, paidUntil, provider, years }) {
+  deliver(user, paymentReceiptEmail(user, { amount, reference, paidUntil, provider, years, url: `${emailSettings().appUrl}/dashboard/` }));
 }
 
 /**

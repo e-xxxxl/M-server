@@ -68,7 +68,7 @@ describe("the registration fee gate", () => {
     assert.deepEqual(reference.registrationFee, { required: true, amount: 1000, currency: "NGN", gateway: "paystack" });
 
     const o = await owner();
-    assert.deepEqual(o.registration, { required: true, paid: false, paidUntil: null, amount: 1000, currency: "NGN", gateway: "paystack", canRenew: false });
+    assert.deepEqual(o.registration, { required: true, paid: false, paidUntil: null, amount: 1000, currency: "NGN", gateway: "paystack", canRenew: false, maxYears: 10 });
 
     for (const path of ["/api/dashboard", "/api/business", "/api/opportunities", "/api/applications", "/api/documents", "/api/verification", "/api/health-profile", "/api/training", "/api/consents"]) {
       const res = await get(o, path);

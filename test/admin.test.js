@@ -297,7 +297,7 @@ describe("business review", () => {
     const verified = await asAdmin("POST", `/api/admin/businesses/${idA}/status`, { status: "Verified", note: "Checks complete" });
     assert.equal(verified.status, 200);
     const idValue = verified.json.business.nmrepId;
-    assert.match(idValue, /^NMREP-\d{4}-\d{6}$/);
+    assert.match(idValue, /^NMREP-\d{4}-\d{8}$/);
 
     // The owner sees exactly this on their own dashboard.
     const dash = await call("GET", "/api/dashboard", { cookie: a.cookie, origin: null });
@@ -307,11 +307,11 @@ describe("business review", () => {
     assert.deepEqual(history.map((h) => h.status), ["Unverified", "Pending Verification", "Verified"]);
     assert.equal(history[2].note, "Checks complete");
 
-    // The next verified business gets the next number, and a suspension keeps the ID.
+    // The next verified business gets a different, unrelated number, and a suspension keeps the ID.
     const second = await asAdmin("POST", `/api/admin/businesses/${b.res.json.business.id}/status`, { status: "Verified", note: "OK" });
     const idB = second.json.business.nmrepId;
-    assert.match(idB, /^NMREP-\d{4}-\d{6}$/);
-    assert.equal(Number(idB.slice(-6)), Number(idValue.slice(-6)) + 1);
+    assert.match(idB, /^NMREP-\d{4}-\d{8}$/);
+    assert.notEqual(idB, idValue);
     const suspended = await asAdmin("POST", `/api/admin/businesses/${idA}/status`, { status: "Suspended", note: "Under review" });
     assert.equal(suspended.json.business.nmrepId, idValue);
     const again = await asAdmin("POST", `/api/admin/businesses/${idA}/status`, { status: "Verified", note: "Cleared" });
@@ -325,7 +325,7 @@ describe("business review", () => {
       owners.map((o) => asAdmin("POST", `/api/admin/businesses/${o.res.json.business.id}/status`, { status: "Verified", note: "Batch" })),
     );
     const ids = results.map((r) => r.json.business.nmrepId);
-    assert.ok(ids.every((x) => /^NMREP-\d{4}-\d{6}$/.test(x)));
+    assert.ok(ids.every((x) => /^NMREP-\d{4}-\d{8}$/.test(x)));
     assert.equal(new Set(ids).size, 5);
   });
 

@@ -162,14 +162,14 @@ describe("running a check", () => {
     assert.equal(calls.length, 0, "listing never calls the provider");
   });
 
-  it("a NIN that matches passes, moves the business to Pending Verification, and stores no NIN, name, address or photo", async () => {
+  it("a NIN that matches passes, verifies the business at once with a NMREP ID, and stores no NIN, name, address or photo", async () => {
     const o = await owner();
     answer = () => ninRecord({ telephoneno: ownPhone(o) });
     const res = await run(o, { type: "nin", number: NIN, consent: true });
     assert.equal(res.status, 201, res.text);
     assert.equal(res.json.check.status, "Passed");
     assert.equal(res.json.check.maskedValue, "*******8901");
-    assert.equal(res.json.verificationStatus, "Pending Verification");
+    assert.equal(res.json.verificationStatus, "Verified");
     assert.ok(!res.text.includes(NIN) && !res.text.includes("Chika") && !res.text.includes("SECRET"), "the response holds nothing from the record");
 
     const stored = JSON.stringify(await VerificationCheck.find({}).lean());
@@ -181,13 +181,14 @@ describe("running a check", () => {
     assert.ok(row.consentAt);
 
     const business = await Business.findOne({ owner: o.user.id });
-    assert.equal(business.verificationStatus, "Pending Verification");
-    assert.match(business.verificationHistory.at(-1).note, /Automated check passed/);
-    assert.equal(await Notification.countDocuments({ user: o.user.id, title: /Pending Verification/ }), 1);
+    assert.equal(business.verificationStatus, "Verified");
+    assert.match(business.nmrepId, /^NMREP-\d{4}-\d{8}$/);
+    assert.match(business.verificationHistory.at(-1).note, /NIN confirmed automatically/);
+    assert.equal(await Notification.countDocuments({ user: o.user.id, title: /is verified/ }), 1);
 
     const list = await call("GET", "/api/verification", { cookie: o.cookie });
     assert.equal(list.json.checks[0].result.status, "Passed");
-    assert.equal(list.json.verificationStatus, "Pending Verification");
+    assert.equal(list.json.verificationStatus, "Verified");
   });
 
   it("a record in a different name needs review and does not change the status", async () => {
@@ -380,14 +381,14 @@ describe("what reviewers see", () => {
     assert.ok(!ownerList.text.includes("otherBusinessesWithSameNumber"), "owners never see duplicate signals");
   });
 
-  it("an administrator can still decide: Pending Verification can be set to Verified by hand", async () => {
+  it("an administrator can still change the automatic status afterwards", async () => {
     const o = await owner();
     answer = () => ninRecord();
     await run(o, { type: "nin", number: NIN, consent: true });
-    const set = await call("POST", `/api/admin/businesses/${o.business.id}/status`, { cookie: admin, body: { status: "Verified", note: "Documents and checks reviewed." } });
+    const set = await call("POST", `/api/admin/businesses/${o.business.id}/status`, { cookie: admin, body: { status: "Rejected", note: "Documents do not match." } });
     assert.equal(set.status, 200);
-    assert.equal(set.json.business.verificationStatus, "Verified");
-    assert.ok(set.json.business.nmrepId);
+    assert.equal(set.json.business.verificationStatus, "Rejected");
+    assert.ok(set.json.business.nmrepId, "the ID issued at verification stays on file");
   });
 });
 

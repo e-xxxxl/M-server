@@ -100,7 +100,7 @@ const server = app.listen(config.port, config.host, () => {
 // Reminders (a programme closing soon, a training session tomorrow). Safe to run on more than one server: each
 // reminder is recorded under a unique key, so nobody is told twice.
 // Always started: each pass checks the live setting, so the super admin can switch reminders on or off without a restart.
-const stopReminders = startReminderScheduler(config.reminders);
+const stopReminders = startReminderScheduler(config.reminders, config);
 if (!config.reminders.enabled) console.log("Reminders are off (REMINDERS_ENABLED=false or switched off by the super admin).");
 
 async function shutdown(signal) {
