@@ -7,7 +7,8 @@ import { matchesAny, phoneTail } from "./name-match.js";
 import { prembly } from "./prembly.js";
 
 /**
- * Automated checks (NIN, BVN, CAC, TIN) through the provider, feeding the manual review. A check never makes a
+ * Automated checks (NIN and CAC) through the provider, feeding the manual review. The NIN is required of every owner (not every
+ * business has a CAC number); the CAC check is only for businesses that are registered with the CAC. A check never makes a
  * business Verified: it records an outcome for a reviewer and, when it passes, moves an Unverified business to
  * Pending Verification so it appears in the review queue. Only an administrator sets Verified.
  */
@@ -15,23 +16,15 @@ import { prembly } from "./prembly.js";
 export const checkInfo = {
   nin: {
     label: "National Identification Number (NIN)",
-    description: "Checks that the NIN belongs to you. We compare the name on the record with your account name and the owner name in your profile. We do not keep your NIN or the record.",
+    description: "Checks that the NIN belongs to you. We compare the name on the record with your account name and the owner name in your profile. We do not keep your NIN or the record. Required for every business.",
     needsNumber: true,
-  },
-  bvn: {
-    label: "Bank Verification Number (BVN)",
-    description: "Checks that the BVN belongs to you. We compare the name on the record with your account name and the owner name in your profile. We do not keep your BVN or the record.",
-    needsNumber: true,
+    required: true,
   },
   cac: {
     label: "CAC registration",
-    description: "Checks the CAC registration number in your profile against the public company register and compares the registered name with your business name.",
+    description: "Only for businesses registered with the CAC. Checks the CAC registration number in your profile against the public company register and compares the registered name with your business name.",
     needsNumber: false,
-  },
-  tin: {
-    label: "Tax Identification Number (TIN)",
-    description: "Checks the TIN in your profile and compares the taxpayer name with your business or owner name.",
-    needsNumber: false,
+    required: false,
   },
 };
 
@@ -62,17 +55,19 @@ export const verificationEnabled = (config) => prembly.enabled && String(config.
 /** Whether a check can be run for this business now, and why not. */
 export function applicability(type, business) {
   if (type === "cac") {
-    if (!business.cacNumber) return "Add your CAC registration number to your business profile first.";
+    if (!business.cacNumber) {
+      return business.hasCac === "No"
+        ? "Not needed: your business is not registered with the CAC. Your NIN check is enough."
+        : "Add your CAC registration number to your business profile first.";
+    }
     if (!companyTypes[business.businessType]) return "Your business type is not registered with the CAC.";
   }
-  if (type === "tin" && !business.tin) return "Add your Tax Identification Number to your business profile first.";
   return "";
 }
 
-/** The number a check is about: typed for NIN and BVN, taken from the profile for CAC and TIN. */
+/** The number a check is about: typed for the NIN, taken from the profile for the CAC. */
 function valueFor(type, business, input) {
   if (type === "cac") return String(business.cacNumber).replace(/^(RC|BN|IT|LP|LLP)[\s-]*/i, "").trim();
-  if (type === "tin") return String(business.tin).trim();
   return input.number;
 }
 
@@ -106,7 +101,27 @@ export function reviewerView(check, duplicates = 0) {
 export async function latestChecks(businessId) {
   const all = await VerificationCheck.find({ business: businessId }).sort({ checkedAt: -1 });
   const seen = new Set();
-  return all.filter((c) => (seen.has(c.type) ? false : seen.add(c.type)));
+  // Checks of a kind that is no longer offered (BVN and TIN were removed) are kept on file but not shown.
+  return all.filter((c) => checkTypes.includes(c.type) && (seen.has(c.type) ? false : seen.add(c.type)));
+}
+
+/** True when a NIN check has found a record for this business (whether or not the names matched: a reviewer decides that). */
+export async function ninChecked(businessId) {
+  return Boolean(await VerificationCheck.exists({ business: businessId, type: "nin", status: mongoose.trusted({ $in: ["Passed", "Needs review"] }) }));
+}
+
+/**
+ * Sign-up: keeps the last four digits and a keyed fingerprint of the NIN on the business, then runs the NIN check when
+ * automated checks are on. The check never blocks or fails the sign-up: if the provider is slow or unavailable the owner
+ * simply runs it later from Verification. The number itself is never stored or logged.
+ */
+export async function recordRegistrationNin({ config, business, user, nin, waitMs = 8000 }) {
+  business.ninMasked = maskValue(nin);
+  if (String(config.verification.hashKey).length >= 32) business.ninHash = fingerprint(config, "nin", nin);
+  await business.save();
+  if (!verificationEnabled(config)) return null;
+  const run = runCheck({ config, business, user, input: { type: "nin", number: nin, consent: true } }).catch(() => null);
+  return Promise.race([run, new Promise((resolve) => setTimeout(() => resolve(null), waitMs).unref?.())]);
 }
 
 /** How many other businesses have a check on the same number. A reviewer's signal, never shown to owners. */
@@ -190,8 +205,8 @@ export async function runCheck({ config, business, user, input }) {
 
 /** Calls the provider and compares the answer with what NMREP holds. Returns { unavailable } or the outcome to store. */
 async function runProvider(type, business, user, value) {
-  if (type === "nin" || type === "bvn") {
-    const r = await prembly[type](value);
+  if (type === "nin") {
+    const r = await prembly.nin(value);
     if (r.unavailable) return r;
     if (!r.found) return { status: "Not found", reference: r.reference };
     const official = [r.person.firstName, r.person.middleName, r.person.lastName].filter(Boolean).join(" ");
@@ -200,25 +215,18 @@ async function runProvider(type, business, user, value) {
     const phoneMatch = theirs ? theirs === phoneTail(user.phone) : null;
     return { status: nameMatch ? "Passed" : "Needs review", nameMatch, phoneMatch, reference: r.reference };
   }
-  if (type === "cac") {
-    const r = await prembly.cac({ number: value, companyType: companyTypes[business.businessType], companyName: business.businessName });
-    if (r.unavailable) return r;
-    if (!r.found) return { status: "Not found", reference: r.reference };
-    const nameMatch = matchesAny(r.company.name, [business.businessName, business.tradingName], { dropCompanyWords: true });
-    const active = !inactive.test(r.company.status);
-    return {
-      status: nameMatch && active ? "Passed" : "Needs review",
-      nameMatch,
-      registeredName: r.company.name.slice(0, 200),
-      companyStatus: r.company.status.slice(0, 40),
-      reference: r.reference,
-    };
-  }
-  const r = await prembly.tin(value);
+  const r = await prembly.cac({ number: value, companyType: companyTypes[business.businessType], companyName: business.businessName });
   if (r.unavailable) return r;
   if (!r.found) return { status: "Not found", reference: r.reference };
-  const nameMatch = matchesAny(r.taxpayer.name, [business.businessName, business.tradingName, business.ownerName, user.fullName], { dropCompanyWords: true });
-  return { status: nameMatch ? "Passed" : "Needs review", nameMatch, reference: r.reference };
+  const nameMatch = matchesAny(r.company.name, [business.businessName, business.tradingName], { dropCompanyWords: true });
+  const active = !inactive.test(r.company.status);
+  return {
+    status: nameMatch && active ? "Passed" : "Needs review",
+    nameMatch,
+    registeredName: r.company.name.slice(0, 200),
+    companyStatus: r.company.status.slice(0, 40),
+    reference: r.reference,
+  };
 }
 
 export { checkTypes };

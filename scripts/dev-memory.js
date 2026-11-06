@@ -1,12 +1,11 @@
 // Runs the API against a temporary in-memory MongoDB, so you can try everything without
 // Atlas. Data is lost when you stop it. Usage: npm run dev:memory
 //
-// To try the automated verification screens (NIN, BVN, CAC, TIN) without a Prembly account or any cost, start it with
+// To try the automated verification screens (NIN and CAC) without a Prembly account or any cost, start it with
 // STAND_IN_VERIFICATION=true. A stand-in answers instead of Prembly, by these rules (never used in production):
-//   NIN or BVN ending in 0: not found. Ending in 1: a record in a different name. Any other: a record in the name
+//   NIN ending in 0: not found. Ending in 1: a record in a different name. Any other: a record in the name
 //   STAND_IN_NAME (default "Ada Obi"), with the phone 08012345678.
 //   CAC number ending in 0: not found. Ending in 1: a struck-off company. Any other: an active company with the business name.
-//   TIN ending in 0: not found. Any other: a taxpayer named STAND_IN_NAME.
 import mongoose from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
 // A smaller MongoDB for the temporary test database than the library default (it downloads once).
@@ -55,9 +54,8 @@ if (standIn) {
     if (last === "0") return { status: 400, json: {} };
     const hit = (data) => ({ status: 200, json: { status: true, detail: "Verification Successful", response_code: "00", data, verification: { reference: "stand-in" } } });
     if (path.endsWith("vnin-basic")) return hit(last === "1" ? { firstname: "Demo", surname: "Stranger", telephoneno: "08099999999" } : { firstname: first, surname: rest.join(" "), telephoneno: "08012345678" });
-    if (path.endsWith("bvn_validation")) return hit(last === "1" ? { firstName: "Demo", lastName: "Stranger", phoneNumber: "08099999999" } : { firstName: first, lastName: rest.join(" "), phoneNumber: "08012345678" });
     if (path.endsWith("cac/basic")) return hit({ company_name: `${body.company_name ?? "Demo Company"} LIMITED`, company_status: last === "1" ? "Inactive" : "Active" });
-    return hit({ taxpayer_name: name });
+    return { status: 400, json: {} };
   };
   const fetchImpl = async (url, init) => {
     const r = answer(new URL(url).pathname, JSON.parse(init.body));

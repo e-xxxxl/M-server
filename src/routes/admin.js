@@ -9,7 +9,7 @@ import { User } from "../models/User.js";
 import { newReferralCode, newTemporaryPassword } from "../lib/codes.js";
 import { hashPassword } from "../lib/crypto.js";
 import { issueNmrepId } from "../lib/ids.js";
-import { duplicatesOf, latestChecks, reviewerView, verificationEnabled } from "../lib/verification.js";
+import { duplicatesOf, latestChecks, ninChecked, reviewerView, verificationEnabled } from "../lib/verification.js";
 import { recordOpen, sendDocument, sharedView } from "../lib/documents.js";
 import { submittedDocuments } from "../lib/verification-documents.js";
 import { Product } from "../models/Product.js";
@@ -217,6 +217,13 @@ export function adminRoutes({ config }) {
     await sendDocument(res, doc);
   });
 
+  // The business's logo, for staff looking at the business profile.
+  router.get("/businesses/:id/logo", async (req, res) => {
+    const business = await Business.findById(parseId(req.params.id));
+    if (!business?.logo?.storageKey) throw new ApiError(404, "not_found", "Not found.");
+    await sendProductImage(res, business.logo);
+  });
+
   // A picture of one of the business's products, for staff looking at the business profile.
   router.get("/businesses/:id/products/:productId/images/:imageId", async (req, res) => {
     const business = await Business.findById(parseId(req.params.id));
@@ -235,6 +242,12 @@ export function adminRoutes({ config }) {
     if (!business) throw new ApiError(404, "not_found", "Not found.");
     if (business.verificationStatus === status) {
       throw new ApiError(422, "validation", "The business already has this status.", { status: "The business already has this status." });
+    }
+
+    // Every business needs its owner's NIN checked before it can be Verified (not every business has a CAC number).
+    // Only enforced while automated checks are on: with them off, review is by hand.
+    if (status === "Verified" && verificationEnabled(config) && !(await ninChecked(business._id))) {
+      throw new ApiError(409, "nin_required", "The owner's NIN has not been checked yet. Ask the owner to run the NIN check from Verification before this business is marked Verified.");
     }
 
     business.verificationStatus = status;

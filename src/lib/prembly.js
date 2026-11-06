@@ -3,14 +3,14 @@
  *
  * - The API key lives only in the server's environment (PREMBLY_API_KEY). It is sent only to the Prembly host
  *   and never logged, returned or stored.
- * - Numbers (NIN, BVN) are sent in the request body only. Request and response bodies are never logged.
+ * - The NIN is sent in the request body only. Request and response bodies are never logged.
  * - A call never throws. It answers { unavailable: true } when the provider cannot be used right now (network
  *   problem, timeout, 5xx, rate limit, or our own key or wallet being refused), and otherwise { found, ... }.
  * - Only the few fields NMREP needs are returned, in a provider-neutral shape. Everything else the provider sends
  *   (date of birth, address, photo, directors, and so on) is dropped here and never leaves this file.
  *
- * Provider documentation used (docs.prembly.com): NIN basic POST /verification/vnin-basic, BVN basic POST
- * /verification/bvn_validation, CAC basic POST /verification/cac/basic, TIN POST /verification/tin. A request is
+ * Provider documentation used (docs.prembly.com): NIN basic POST /verification/vnin-basic and CAC basic POST
+ * /verification/cac/basic. NMREP checks only these two. A request is
  * authenticated with the header x-api-key. A hit is HTTP 200 with status true and response_code "00". The
  * documentation does not describe failure responses, so anything that is not a hit counts as "not found".
  *
@@ -74,18 +74,6 @@ export function createPrembly(cfg, { fetchImpl = fetch, log = console } = {}) {
       };
     },
 
-    /** Bank Verification Number. Same shape as nin(). */
-    async bvn(number) {
-      const r = await call("/verification/bvn_validation", { number });
-      if (!r.found) return r;
-      const d = r.data;
-      return {
-        found: true,
-        reference: r.reference,
-        person: { firstName: clean(d.firstName), middleName: clean(d.middleName), lastName: clean(d.lastName), phone: clean(d.phoneNumber) },
-      };
-    },
-
     /** CAC registration. companyType is BN, RC, IT, LP or LLP. Returns { found, company: { name, status, registeredOn, type }, reference }. */
     async cac({ number, companyType, companyName }) {
       const r = await call("/verification/cac/basic", {
@@ -100,13 +88,6 @@ export function createPrembly(cfg, { fetchImpl = fetch, log = console } = {}) {
         reference: r.reference,
         company: { name: clean(d.company_name), status: clean(d.company_status), registeredOn: clean(d.registrationDate), type: clean(d.company_type) },
       };
-    },
-
-    /** Tax Identification Number. Returns { found, taxpayer: { name }, reference }. */
-    async tin(number) {
-      const r = await call("/verification/tin", { number, channel: "TIN" });
-      if (!r.found) return r;
-      return { found: true, reference: r.reference, taxpayer: { name: clean(r.data.taxpayer_name) } };
     },
   };
 }
@@ -130,7 +111,5 @@ export const prembly = {
     return current.enabled;
   },
   nin: (n) => current.nin(n),
-  bvn: (n) => current.bvn(n),
   cac: (a) => current.cac(a),
-  tin: (n) => current.tin(n),
 };

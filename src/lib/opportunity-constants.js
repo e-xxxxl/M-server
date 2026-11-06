@@ -14,6 +14,11 @@ export const opportunityTagGroups = [
   { group: "Business services", tags: ["Legal", "Logistics", "Insurance"] },
 ];
 export const opportunityTags = opportunityTagGroups.flatMap((g) => g.tags);
+
+/** The skills a business can say it needs help with: the tags of "Skills and growth" and "Business services". A training with one of them as a tag is recommended. */
+export const skillAreas = opportunityTagGroups.filter((g) => g.group === "Skills and growth" || g.group === "Business services").flatMap((g) => g.tags);
+/** What a business is interested in: any opportunity category. */
+export const interestAreas = opportunityTags;
 export const maxOpportunityTags = 5;
 
 /** Documents an opportunity can ask for (every wallet kind except "Other"), and the most it can ask for. */

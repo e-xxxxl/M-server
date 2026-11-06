@@ -3,6 +3,7 @@ import { Business } from "../models/Business.js";
 import { Notification } from "../models/Notification.js";
 import { buildInsights } from "../lib/insights.js";
 import { countEligible } from "../lib/open-opportunities.js";
+import { recommendedTrainings } from "../lib/training.js";
 import { ApiError } from "../middleware/errors.js";
 import { requirePaidRegistration } from "../middleware/paid.js";
 import { requireAuth, requireRole } from "../middleware/security.js";
@@ -17,7 +18,9 @@ export function dashboardRoutes({ config }) {
     const unreadNotifications = await Notification.countDocuments({ user: req.user._id, readAt: null });
     // "You may qualify for N current programmes": open opportunities this business meets every Required requirement for.
     const eligibleOpportunities = await countEligible(business, req.user._id);
-    res.json({ user: req.user, business, insights: buildInsights(business), unreadNotifications, eligibleOpportunities });
+    // Trainings that cover the skill gaps the owner named.
+    const recommendedTraining = (await recommendedTrainings(business, req.user._id)).length;
+    res.json({ user: req.user, business, insights: buildInsights(business), unreadNotifications, eligibleOpportunities, recommendedTraining });
   });
 
   return router;

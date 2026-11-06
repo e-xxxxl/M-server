@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { dropTokens, findToken, sendPasswordChanged, sendPasswordReset, sendVerification } from "../lib/account-emails.js";
 import { applyComplianceRules } from "../lib/compliance.js";
+import { recordRegistrationNin } from "../lib/verification.js";
 import { Agent } from "../models/Agent.js";
 import { Business } from "../models/Business.js";
 import { Organisation } from "../models/Organisation.js";
@@ -55,7 +56,7 @@ export function authRoutes({ config, limiters }) {
 
   router.post("/register", limiters.register, async (req, res) => {
     const body = registerSchema.parse(req.body);
-    const { password, ...account } = body.account;
+    const { password, nin, ninConsent: _ninConsent, ...account } = body.account;
     applyComplianceRules(body.business, body.business, "business.");
     // The area must belong to the state, and is stored with its proper spelling.
     body.business.lga = await checkLocation(body.business, "business.");
@@ -97,6 +98,9 @@ export function authRoutes({ config, limiters }) {
       await User.deleteOne({ _id: user._id }); // do not leave an account without a business behind
       throw err;
     }
+
+    // The NIN is kept as its last four digits and a fingerprint, and checked when automated checks are on. Never blocks sign-up.
+    await recordRegistrationNin({ config, business, user, nin });
 
     const extra = await startSession(req, res, user._id);
     await sendVerification(user); // queues the "confirm your email" message, never blocks sign-up on the mail service

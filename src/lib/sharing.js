@@ -2,7 +2,7 @@
  * What an organisation can see about an applicant, and only after the owner agreed (framework sections 17 and 18).
  *
  * Four categories. "summary" is needed to apply. The other three are the owner's choice.
- * Nothing here covers NIN, BVN or bank account numbers: a NIN or BVN is only checked once and never stored (see
+ * Nothing here covers the NIN or bank account numbers: a NIN is only checked once and never stored (see
  * lib/verification.js) and account numbers are not collected. Documents in the owner's wallet are shared only when the
  * owner ticks "documents" and picks which ones for one application (see lib/documents.js); nothing is shared by default.
  */
@@ -29,6 +29,8 @@ export const sharingCategories = {
       "hasTin",
       "verificationStatus",
       "nmrepId",
+      "description",
+      "businessSize",
     ],
   },
   contact: {
@@ -41,8 +43,8 @@ export const sharingCategories = {
     label: "Full business profile",
     required: false,
     description:
-      "Business address, CAC and TIN numbers, owner role, number of branches, bank name, existing loans, the size of opportunity sought, website and social media handles.",
-    fields: ["address", "ownerName", "ownerRole", "cacNumber", "tin", "branches", "bankName", "existingLoans", "fundingNeeds", "website", "facebook", "instagram", "x", "tiktok"],
+      "Business address, CAC and TIN numbers, owner role, number of branches, bank name, existing loans, the size of opportunity sought, monthly revenue, assets value, website and social media handles.",
+    fields: ["address", "ownerName", "ownerRole", "cacNumber", "tin", "branches", "bankName", "existingLoans", "fundingNeeds", "monthlyRevenue", "assetsValue", "website", "facebook", "instagram", "x", "tiktok"],
   },
 };
 
@@ -67,7 +69,7 @@ export function describeSharing(organisationName) {
       required: sharingCategories[key].required,
       description: sharingCategories[key].description,
     })),
-    neverShared: "Your NIN, BVN and bank account numbers are never shared: NMREP does not store your NIN or BVN, and does not collect account numbers. Your documents are shared only if you choose them for an application.",
+    neverShared: "Your NIN and bank account numbers are never shared: NMREP does not store your NIN (only its last four digits and a fingerprint), and does not collect account numbers. Your documents are shared only if you choose them for an application.",
   };
 }
 

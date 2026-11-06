@@ -112,7 +112,7 @@ export function updateEmail(user, title, url, { body = "", unsubscribeUrl = "" }
 }
 
 /** The receipt for the yearly registration fee. */
-export function paymentReceiptEmail(user, { amount, reference, paidUntil, url }) {
+export function paymentReceiptEmail(user, { amount, reference, paidUntil, url, provider = "" }) {
   const money = new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(amount);
   const until = paidUntil.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Lagos" });
   return {
@@ -122,7 +122,12 @@ export function paymentReceiptEmail(user, { amount, reference, paidUntil, url })
       paragraphs: [
         `Thank you. We received your registration fee of ${money}.`,
         `Your registration is paid until ${until}. Payment reference: ${reference}.`,
-        "Keep this email as your receipt. Card details are entered on Paystack's page and never reach NMREP.",
+        // Only the gateway that took the payment is named. Unknown (an older payment) says neither.
+        provider === "alatpay"
+          ? "Keep this email as your receipt. You paid by bank transfer, and NMREP does not keep your bank details."
+          : provider === "paystack"
+            ? "Keep this email as your receipt. Card details are entered on Paystack's page and never reach NMREP."
+            : "Keep this email as your receipt. Your card or bank details never reach NMREP.",
       ],
       button: { label: "Go to NMREP", url },
     }),

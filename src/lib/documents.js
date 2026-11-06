@@ -75,6 +75,9 @@ export function downloadName(doc) {
   return `${safe}.${EXTENSION[doc.mime]}`;
 }
 
+/** How many days before the end of a share the owner is warned (and offered to extend it). */
+export const DOCUMENT_WARNING_DAYS = 3;
+
 /** True while an agreement is really sharing its documents: not ended, has documents, and the end date has not passed. */
 export function documentsSharingNow(consent, now = new Date()) {
   if (!consent || consent.revokedAt) return false;

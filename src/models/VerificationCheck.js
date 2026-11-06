@@ -1,12 +1,12 @@
 import mongoose from "mongoose";
 
-export const checkTypes = ["nin", "bvn", "cac", "tin"];
+export const checkTypes = ["nin", "cac"];
 export const checkStatuses = ["Passed", "Needs review", "Not found"];
 
 /**
  * The record of one automated check. It holds the outcome and only what a reviewer needs to judge it:
- * - a masked number (last four digits) and a keyed fingerprint (HMAC), never the NIN or BVN itself;
- * - whether the names (and, for NIN and BVN, the phone number) matched, never the names themselves, except the
+ * - a masked number (last four digits) and a keyed fingerprint (HMAC), never the NIN itself;
+ * - whether the names (and, for the NIN, the phone number) matched, never the names themselves, except the
  *   public company name from the CAC register;
  * - the provider's reference, so a result can be queried with the provider.
  * Everything else the provider returns is dropped before it reaches the database.
@@ -25,7 +25,7 @@ const checkSchema = new mongoose.Schema(
     registeredName: { type: String, maxlength: 200, default: "" },
     companyStatus: { type: String, maxlength: 40, default: "" },
     reference: { type: String, maxlength: 80, default: "" },
-    // NIN and BVN: when the owner agreed to the check.
+    // NIN: when the owner agreed to the check.
     consentAt: { type: Date, default: null },
     checkedAt: { type: Date, default: Date.now },
   },

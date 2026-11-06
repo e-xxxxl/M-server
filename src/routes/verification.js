@@ -28,6 +28,8 @@ export function verificationRoutes({ config }) {
     res.json({
       available: verificationEnabled(config),
       verificationStatus: business.verificationStatus,
+      // The NIN given at sign-up, as its last four digits. The full number is never kept.
+      nin: { provided: Boolean(business.ninMasked), masked: business.ninMasked },
       documents: await ownerDocumentsView(business),
       checks: checkTypes.map((type) => {
         const check = latest.get(type);
@@ -37,6 +39,7 @@ export function verificationRoutes({ config }) {
           label: checkInfo[type].label,
           description: checkInfo[type].description,
           needsNumber: checkInfo[type].needsNumber,
+          required: checkInfo[type].required,
           applicable: reason === "",
           reason,
           result: check ? ownerView(check) : null,

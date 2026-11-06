@@ -48,6 +48,8 @@ export async function deleteOwnerData(user, { reason = "Account deleted" } = {})
   await removed("trainingRecords", () => TrainingRecord.deleteMany({ owner: user._id }));
   await ConsentRecord.updateMany({ owner: user._id, revokedAt: null }, { $set: { revokedAt: new Date(), revokedReason: reason } });
   await Session.deleteMany({ user: user._id });
+  const mine = await Business.findOne({ owner: user._id }).select("logo");
+  if (mine?.logo?.storageKey) await documentStorage.remove(mine.logo.storageKey);
   await Business.deleteOne({ owner: user._id });
   await User.deleteOne({ _id: user._id });
   return counts;

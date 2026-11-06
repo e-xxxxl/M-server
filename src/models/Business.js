@@ -1,6 +1,18 @@
 import mongoose from "mongoose";
 import { verificationStatuses } from "../options.js";
 
+/** A business's size from its number of employees (the usual MSME bands): micro 1 to 9, small 10 to 49, medium 50 to 199. */
+export function businessSizeOf(employees) {
+  const n = Number(employees);
+  if (!Number.isFinite(n) || n < 0) return null;
+  if (n < 10) return "Micro";
+  if (n < 50) return "Small";
+  if (n < 200) return "Medium";
+  return "Large";
+}
+
+const money = { type: Number, default: null, min: 0, max: 10_000_000_000 };
+
 const str = (max, required = false) => ({ type: String, trim: true, maxlength: max, required, default: required ? undefined : "" });
 
 const businessSchema = new mongoose.Schema(
@@ -35,6 +47,22 @@ const businessSchema = new mongoose.Schema(
     bankName: str(80),
     existingLoans: str(5, true),
     fundingNeeds: str(60),
+    // The owner's NIN is asked at sign-up and checked once. Only the last four digits and a keyed fingerprint are kept, never the number.
+    ninMasked: { type: String, maxlength: 20, default: "" },
+    ninHash: { type: String, maxlength: 64, default: "", select: false },
+    // More about the business. Optional, and not counted in the profile progress.
+    description: str(500),
+    monthlyRevenue: money,
+    assetsValue: money,
+    // Training: what the business needs help with, how it likes to learn, and what interests it.
+    skillGaps: { type: [String], default: [] },
+    preferredFormat: str(20),
+    interests: { type: [String], default: [] },
+    // The logo is an encrypted file in the private document folder. Only facts about it are kept here.
+    logo: {
+      type: new mongoose.Schema({ mime: { type: String, enum: ["image/jpeg", "image/png"], required: true }, size: Number, storageKey: String, iv: String, tag: String }, { _id: false }),
+      default: undefined,
+    },
     // Digital
     website: str(120),
     facebook: str(60),
@@ -70,6 +98,11 @@ const businessSchema = new mongoose.Schema(
         ret.owner = String(ret.owner);
         // Owners never see who referred them. Admin routes build their own response.
         delete ret.referral;
+        // Never the storage details of the logo: only what a screen needs to ask for it.
+        ret.logo = ret.logo?.storageKey ? { mime: ret.logo.mime, size: ret.logo.size } : null;
+        ret.businessSize = businessSizeOf(ret.employees);
+        ret.ninProvided = Boolean(ret.ninMasked);
+        delete ret.ninHash;
         // Profiles saved before the Yes or No questions existed: a number on file means Yes.
         if (!ret.hasCac && ret.cacNumber) ret.hasCac = "Yes";
         if (!ret.hasTin && ret.tin) ret.hasTin = "Yes";

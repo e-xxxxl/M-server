@@ -156,7 +156,7 @@ export async function settlePayment(config, reference, { userId = null, now = ne
         body: `Thank you. Your registration is paid until ${user.registrationPaidUntil.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Lagos" })}.`,
         link: "/dashboard/",
       });
-      sendPaymentReceipt(user, { amount: config.payments.registrationFeeNaira, reference: payment.reference, paidUntil: user.registrationPaidUntil });
+      sendPaymentReceipt(user, { amount: config.payments.registrationFeeNaira, reference: payment.reference, paidUntil: user.registrationPaidUntil, provider: payment.provider });
     }
     return { outcome: "success", payment: claimed };
   }

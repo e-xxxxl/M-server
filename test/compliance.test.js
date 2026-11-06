@@ -30,8 +30,7 @@ describe("CAC and TIN are Yes or No questions", () => {
     const dash = await call("GET", "/api/dashboard", { cookie: res.cookie, origin: null });
     assert.equal(dash.json.insights.progress.total, 26, "the answers are not extra details");
     assert.equal(dash.json.insights.progress.completed, 17, "15 required plus CAC and TIN answered");
-    const ids = dash.json.insights.nextActions.map((a) => a.id);
-    assert.ok(!ids.includes("cac") && !ids.includes("tin"), "no CAC or TIN action once answered No");
+    assert.deepEqual(dash.json.insights.nextActions, []);
   });
 
   it("Yes needs the number", async () => {
@@ -58,8 +57,7 @@ describe("CAC and TIN are Yes or No questions", () => {
     const blank = await signUp();
     assert.equal(blank.json.business.hasCac, "");
     const dash = await call("GET", "/api/dashboard", { cookie: blank.cookie, origin: null });
-    const ids = dash.json.insights.nextActions.map((a) => a.id);
-    assert.ok(ids.includes("cac") && ids.includes("tin"), "still recommended while unanswered");
+    assert.deepEqual(dash.json.insights.nextActions, []);
   });
 
   it("rejects an answer that is not Yes or No", async () => {

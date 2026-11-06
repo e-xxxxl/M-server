@@ -15,70 +15,9 @@ export function profileProgress(business) {
   return { completed, total };
 }
 
-export function nextActions(business) {
-  const actions = [];
-  const unregistered = business.businessType === "Not yet registered with the CAC";
-
-  if (business.hasCac !== "No" && !filled(business.cacNumber)) {
-    actions.push(
-      unregistered
-        ? {
-            id: "cac",
-            title: "Register your business with the CAC",
-            description: "Once registered, add your registration number to your profile. Registered businesses are easier to verify.",
-            section: "identity",
-          }
-        : {
-            id: "cac",
-            title: "Add your CAC registration number",
-            description: "Registered businesses are easier for partners to verify.",
-            section: "identity",
-          },
-    );
-  }
-  if (business.hasTin !== "No" && !filled(business.tin)) {
-    actions.push({
-      id: "tin",
-      title: "Add your Tax Identification Number (TIN)",
-      description: "Lenders and larger customers often ask for it.",
-      section: "identity",
-    });
-  }
-  if (!filled(business.bankName)) {
-    actions.push({
-      id: "bank",
-      title: "Add the bank your business uses",
-      description: "Banking information is part of a complete business profile.",
-      section: "financial",
-    });
-  }
-  if (!filled(business.fundingNeeds)) {
-    actions.push({
-      id: "opportunities",
-      title: "Tell us the size of opportunity you are looking for",
-      description: "It helps show which opportunities fit your business.",
-      section: "financial",
-    });
-  }
-  if (business.branches === null || business.branches === undefined) {
-    actions.push({
-      id: "branches",
-      title: "Add your number of branches",
-      description: "Enter 0 if your business operates from one location.",
-      section: "operations",
-    });
-  }
-  if (!["website", "facebook", "instagram", "x", "tiktok"].some((k) => filled(business[k]))) {
-    actions.push({
-      id: "digital",
-      title: "Add your website or social media handles",
-      description: "Your digital presence is part of your business profile.",
-      section: "digital",
-    });
-  }
-  return actions;
-}
+/** Recommended next actions were removed. The list stays in the response, always empty, so earlier apps keep working. */
+export const nextActions = () => [];
 
 export function buildInsights(business) {
-  return { progress: profileProgress(business), nextActions: nextActions(business) };
+  return { progress: profileProgress(business), nextActions: [] };
 }

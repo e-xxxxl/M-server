@@ -1,6 +1,7 @@
 import { z } from "zod";
 import * as o from "./options.js";
 import { normalizeReferralCode } from "./lib/codes.js";
+import { interestAreas, skillAreas } from "./lib/opportunity-constants.js";
 
 // Plain wording for the two mistakes a client most often makes: leaving a field out, and sending it empty.
 // Every other message is written next to its rule below.
@@ -98,8 +99,25 @@ export const profileFieldNames = Object.keys(buildShape(true)).filter((name) => 
 
 export const businessSchema = z.object(buildShape(true)).strict();
 
+/** An amount in naira, or empty for none. A digit string is accepted. */
+const naira = z.preprocess(
+  (v) => (v === "" ? null : typeof v === "string" && /^\d+(\.\d{1,2})?$/.test(v.trim()) ? Number(v.trim()) : v),
+  z.union([z.null(), z.number({ message: "Enter the amount in naira." }).min(0, "The amount cannot be negative.").max(10_000_000_000, "That amount is too large.")]),
+);
+const pickMany = (values, max) => z.array(oneOf(values), { message: "Choose from the list." }).max(max, `Choose ${max} or fewer.`).transform((v) => [...new Set(v)]);
+
+/** The details that are not part of sign-up: they can only be added or changed afterwards. */
+const extraShape = {
+  description: optionalText(500),
+  monthlyRevenue: naira,
+  assetsValue: naira,
+  skillGaps: pickMany(skillAreas, 8),
+  preferredFormat: z.union([oneOf(o.trainingFormats), z.literal("")]),
+  interests: pickMany(interestAreas, 13),
+};
+
 /** Partial update: only the fields sent are changed. Required fields cannot be blanked. */
-export const businessPatchSchema = z.object(buildShape(false)).partial().strict();
+export const businessPatchSchema = z.object({ ...buildShape(false), ...extraShape }).partial().strict();
 
 /** Optional. Spaces are removed and letters capitalised before the check. */
 export const referralCodeSchema = z
@@ -110,6 +128,8 @@ export const referralCodeSchema = z
   .refine((v) => v === "" || /^[A-Z0-9-]{4,20}$/.test(v), "Enter a valid referral code.")
   .default("");
 
+const ninSchema = z.string().trim().regex(/^[0-9]{11}$/, "Enter your 11 digit NIN, with no spaces or dashes.");
+
 export const registerSchema = z
   .object({
     account: z
@@ -118,6 +138,10 @@ export const registerSchema = z
         email: emailSchema,
         phone: phoneSchema,
         password: passwordSchema,
+        // The owner's National Identification Number is required for everyone, because not every business has a CAC
+        // number. It is checked once and never stored: only its last four digits and a keyed fingerprint are kept.
+        nin: ninSchema,
+        ninConsent: z.literal(true, { message: "Please agree so we can check your NIN." }),
       })
       .strict(),
     business: businessSchema,
@@ -225,9 +249,9 @@ export const passwordChangeSchema = z
   .strict();
 
 /**
- * Running an automated check. CAC and TIN use the number already in the business profile, so the request only names
- * the type. NIN and BVN need the number typed by the owner and the owner's explicit agreement; the number is used for
- * this one request and is not stored.
+ * Running an automated check. The CAC check uses the number already in the business profile, so the request only
+ * names the type. The NIN check needs the number typed by the owner and the owner's explicit agreement; the number is
+ * used for this one request and is not stored.
  */
 const elevenDigits = z.string().trim().regex(/^[0-9]{11}$/, "Enter the 11 digits, with no spaces or dashes.");
 const agreement = z.literal(true, { message: "Please agree so we can run this check." });
@@ -236,9 +260,7 @@ export const verificationCheckSchema = z.discriminatedUnion(
   "type",
   [
     z.object({ type: z.literal("cac") }).strict(),
-    z.object({ type: z.literal("tin") }).strict(),
     z.object({ type: z.literal("nin"), number: elevenDigits, consent: agreement }).strict(),
-    z.object({ type: z.literal("bvn"), number: elevenDigits, consent: agreement }).strict(),
   ],
   { message: "Choose one of the listed options." },
 );

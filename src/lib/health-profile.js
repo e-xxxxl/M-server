@@ -14,8 +14,10 @@ const SECTIONS = [
   { id: "identity", title: "Business identity", fields: ["businessName", "businessType", "sector", "industry", "yearEstablished"] },
   { id: "location", title: "Location", fields: ["state", "lga", "city", "address"] },
   { id: "ownership", title: "Ownership", fields: ["ownerName", "ownerRole", "ownershipStructure"] },
-  { id: "operations", title: "Operations", fields: ["employees", "branches"] },
-  { id: "financial", title: "Financial", fields: ["annualRevenue", "existingLoans", "bankName", "fundingNeeds"] },
+  // Only the details every owner must give count here. Branches, the bank and the size of opportunity are optional, so an
+  // owner who leaves them blank is not left with a section that can never be complete.
+  { id: "operations", title: "Operations", fields: ["employees"] },
+  { id: "financial", title: "Financial", fields: ["annualRevenue", "existingLoans"] },
 ];
 
 const DIGITAL = ["website", "facebook", "instagram", "x", "tiktok"];
@@ -117,9 +119,8 @@ export function buildHealthProfile(business, documentKinds = [], productCount = 
 
   const areas = [registration, verification, information, documents];
   // The first few things not done, in the order of the areas. Not ranked by importance: there is no such method.
-  const nextSteps = areas
-    .flatMap((a) => a.items.filter((i) => !i.done && i.hint).map((i) => ({ area: a.title, label: i.label, hint: i.hint, link: i.link })))
-    .slice(0, 5);
+  // Recommended next steps were removed. The list stays in the response, always empty, so earlier apps keep working.
+  const nextSteps = [];
 
   return {
     note: "A checklist of facts from your profile. It is not a score or a grade.",

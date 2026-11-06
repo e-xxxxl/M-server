@@ -7,6 +7,8 @@ import { Organisation } from "../models/Organisation.js";
 import { ReminderLog } from "../models/ReminderLog.js";
 import { TrainingRecord } from "../models/TrainingRecord.js";
 import { User } from "../models/User.js";
+import { ConsentRecord } from "../models/ConsentRecord.js";
+import { DOCUMENT_WARNING_DAYS } from "./documents.js";
 import { evaluate } from "./eligibility.js";
 
 /**
@@ -98,13 +100,37 @@ export async function runSessionReminders(now = new Date()) {
   return sent;
 }
 
+/**
+ * Warns an owner a few days before the documents they shared with an organisation stop being shared, and offers to
+ * extend. One warning per end date: extending moves the end date, so the next end date gets its own warning.
+ */
+export async function runDocumentExpiryWarnings(now = new Date()) {
+  const horizon = new Date(now.getTime() + DOCUMENT_WARNING_DAYS * DAY);
+  const consents = await ConsentRecord.find({ revokedAt: null, "documents.0": mongoose.trusted({ $exists: true }), documentsExpireAt: mongoose.trusted({ $gt: now, $lte: horizon }) });
+  if (consents.length === 0) return 0;
+  const inactive = await inactiveOwnerIds();
+  let sent = 0;
+  for (const consent of consents) {
+    if (inactive.has(String(consent.owner))) continue;
+    if (!(await claim(consent.opportunity, consent.owner, `docs:${consent._id}:${consent.documentsExpireAt.toISOString().slice(0, 10)}`))) continue;
+    await notify(consent.owner, {
+      type: "opportunity",
+      title: "Your shared documents stop being shared soon".slice(0, 120),
+      body: `Your documents are shared with ${consent.sharedWith} until ${day(consent.documentsExpireAt)}. You can extend this without applying again.`.slice(0, 300),
+      link: "/dashboard/sharing/",
+    }, { bulk: true });
+    sent += 1;
+  }
+  return sent;
+}
+
 /** One pass of every reminder job. Never throws: a failure is logged by name only and the next pass tries again. */
 export async function runReminders(now = new Date()) {
   try {
-    return { deadlines: await runDeadlineReminders(now), sessions: await runSessionReminders(now) };
+    return { deadlines: await runDeadlineReminders(now), sessions: await runSessionReminders(now), documents: await runDocumentExpiryWarnings(now) };
   } catch (err) {
     console.error("Reminder job failed:", err?.name);
-    return { deadlines: 0, sessions: 0, failed: true };
+    return { deadlines: 0, sessions: 0, documents: 0, failed: true };
   }
 }
 

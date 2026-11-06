@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { audit } from "../models/AuditLog.js";
+import { Business } from "../models/Business.js";
 import { ApiError } from "../middleware/errors.js";
 import { requirePaidRegistration } from "../middleware/paid.js";
 import { requireAuth, requireRole } from "../middleware/security.js";
@@ -12,6 +13,7 @@ import {
   markAttendance,
   opportunityView,
   ownerTrainings,
+  recommendedTrainings,
   participantRows,
   participantsOf,
   recordAssessment,
@@ -19,6 +21,7 @@ import {
   revokeCertificate,
   savePlan,
   trainingList,
+  trainingReport,
 } from "../lib/training.js";
 import { idParamSchema } from "../schemas.js";
 import { assessmentSchema, attendanceSchema, completeSchema, reissueCertificateSchema, revokeCertificateSchema, trainingPlanSchema } from "../schemas-opportunities.js";
@@ -40,6 +43,11 @@ export function trainingStaffRoutes({ scope, viewer }) {
 
   router.get("/", async (req, res) => {
     res.json({ items: await trainingList(scope(req)) });
+  });
+
+  // How the trainings went: completion, attendance and pass rates, certificates. Counts only, before the /:id route.
+  router.get("/report", async (req, res) => {
+    res.json(await trainingReport(scope(req)));
   });
 
   router.get("/:id", async (req, res) => {
@@ -128,6 +136,12 @@ export function trainingOwnerRoutes({ config }) {
   router.use(requireAuth(config), requireRole("msme_owner"), requirePaidRegistration(config));
   router.get("/", async (req, res) => {
     res.json({ items: await ownerTrainings(req.user._id) });
+  });
+  // Open trainings that cover the skill gaps the business named, best match first.
+  router.get("/recommended", async (req, res) => {
+    const business = await Business.findOne({ owner: req.user._id });
+    if (!business) throw new ApiError(404, "not_found", "Business profile not found.");
+    res.json({ items: await recommendedTrainings(business, req.user._id), skillGaps: business.skillGaps, preferredFormat: business.preferredFormat });
   });
   return router;
 }

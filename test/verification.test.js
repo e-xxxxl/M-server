@@ -9,14 +9,13 @@ import { VerificationCheck } from "../src/models/VerificationCheck.js";
 import { client, registrationBody, startTestServer } from "./helpers.js";
 import { createStaff, logIn } from "./staff-helpers.js";
 
-// Automated checks through the provider (NIN, BVN, CAC, TIN). The provider is replaced by a fake HTTP layer,
+// Automated checks through the provider (NIN and CAC). The provider is replaced by a fake HTTP layer,
 // so the real client code (URLs, headers, bodies, reading the answer) is exercised without any network or cost.
 
 let ctx;
 let call;
 let admin;
 const NIN = "12345678901";
-const BVN = "22334455667";
 const quiet = { log() {}, error() {} };
 
 // What the fake provider is told to answer, and what it was asked.
@@ -49,7 +48,13 @@ beforeEach(() => {
 });
 
 async function owner(business = {}, account = {}) {
+  // Signing up runs the NIN check when the provider answers. These tests run checks themselves, so the provider is
+  // "down" while signing up and nothing is recorded or counted at that point.
+  const keep = answer;
+  answer = () => ({ status: 503, json: {} });
   const reg = await call("POST", "/api/auth/register", { body: registrationBody({ account, business }) });
+  answer = keep;
+  calls = [];
   assert.equal(reg.status, 201, reg.text);
   return { cookie: reg.cookie, user: reg.json.user, business: reg.json.business, body: null };
 }
@@ -83,20 +88,14 @@ describe("the provider client", () => {
     assert.deepEqual(calls[0].body, { number: NIN });
     assert.ok(!JSON.stringify(r).includes("SECRET ADDRESS") && !JSON.stringify(r).includes("BASE64PHOTO"), "dropped everything else");
 
-    answer = () => hit({ firstName: "A", middleName: "", lastName: "B", dateOfBirth: "01-Jan-2000", phoneNumber: "0801" });
-    await p.bvn(BVN);
-    assert.equal(calls.at(-1).url, "https://api.prembly.test/verification/bvn_validation");
+    assert.equal(p.bvn, undefined, "BVN is not checked");
+    assert.equal(p.tin, undefined, "TIN is not checked");
 
     answer = () => hit({ company_name: "OBI FABRICS LTD", company_status: "Active", directors: { a: 1 } });
     const c = await p.cac({ number: "1234567", companyType: "RC", companyName: "Obi Fabrics" });
     assert.equal(c.company.name, "OBI FABRICS LTD");
     assert.deepEqual(calls.at(-1).body, { rc_number: "1234567", company_type: "RC", company_name: "Obi Fabrics" });
     assert.equal(calls.at(-1).url, "https://api.prembly.test/verification/cac/basic");
-
-    answer = () => hit({ taxpayer_name: "Obi Fabrics" });
-    await p.tin("1234567-0001");
-    assert.deepEqual(calls.at(-1).body, { number: "1234567-0001", channel: "TIN" });
-    assert.equal(calls.at(-1).url, "https://api.prembly.test/verification/tin");
   });
 
   it("treats a refusal of our own key, a rate limit, a server error and a network failure as unavailable, and a normal miss as not found", async () => {
@@ -145,18 +144,20 @@ describe("Prembly test mode (sandbox)", () => {
 });
 
 describe("running a check", () => {
-  it("lists the four checks and says why CAC and TIN cannot be run until the profile has the numbers", async () => {
+  it("lists the two checks (NIN required, CAC only for registered businesses) and says why CAC cannot be run yet", async () => {
     const o = await owner();
     const res = await call("GET", "/api/verification", { cookie: o.cookie });
     assert.equal(res.status, 200);
     assert.equal(res.json.available, true);
-    assert.deepEqual(res.json.checks.map((c) => c.type), ["nin", "bvn", "cac", "tin"]);
+    assert.deepEqual(res.json.checks.map((c) => c.type), ["nin", "cac"]);
     const by = Object.fromEntries(res.json.checks.map((c) => [c.type, c]));
     assert.equal(by.nin.applicable, true);
     assert.equal(by.nin.needsNumber, true);
+    assert.equal(by.nin.required, true);
+    assert.equal(by.cac.required, false);
     assert.equal(by.cac.applicable, false);
     assert.match(by.cac.reason, /CAC registration number/);
-    assert.equal(by.tin.applicable, false);
+    assert.deepEqual(res.json.nin, { provided: true, masked: "*******8901" });
     assert.equal(by.nin.result, null);
     assert.equal(calls.length, 0, "listing never calls the provider");
   });
@@ -203,7 +204,7 @@ describe("running a check", () => {
   it("a number the provider cannot find is Not found, with a plain message", async () => {
     const o = await owner();
     answer = () => ({ status: 400, json: {} });
-    const res = await run(o, { type: "bvn", number: BVN, consent: true });
+    const res = await run(o, { type: "nin", number: NIN, consent: true });
     assert.equal(res.status, 201);
     assert.equal(res.json.check.status, "Not found");
     assert.match(res.json.check.message, /could not find/);
@@ -218,7 +219,7 @@ describe("running a check", () => {
     assert.equal(notTrue.status, 422);
     const short = await run(o, { type: "nin", number: "123", consent: true });
     assert.ok(short.json.error.fields.number);
-    const spaces = await run(o, { type: "bvn", number: "1234 5678 901", consent: true });
+    const spaces = await run(o, { type: "nin", number: "1234 5678 901", consent: true });
     assert.equal(spaces.status, 422);
     const asNumber = await run(o, { type: "nin", number: 12345678901, consent: true });
     assert.equal(asNumber.status, 422);
@@ -239,8 +240,8 @@ describe("running a check", () => {
     assert.equal(await VerificationCheck.countDocuments({ owner: o.user.id }), 1);
   });
 
-  it("limits attempts per type, and in total, per business per day", async () => {
-    const o = await owner({ hasCac: "Yes", cacNumber: "RC1234567", hasTin: "Yes", tin: "12345678-0001" });
+  it("limits attempts per type per business per day, and each type has its own allowance", async () => {
+    const o = await owner({ hasCac: "Yes", cacNumber: "RC1234567" });
     answer = () => ({ status: 400, json: {} });
     for (let i = 0; i < 3; i++) assert.equal((await run(o, { type: "nin", number: `1000000000${i}`, consent: true })).status, 201);
     const fourth = await run(o, { type: "nin", number: "10000000009", consent: true });
@@ -248,14 +249,11 @@ describe("running a check", () => {
     assert.equal(fourth.json.error.code, "check_limit");
     assert.equal(calls.length, 3, "a refused attempt never reaches the provider");
 
-    // Another type has its own allowance of 3: 3 NIN + 3 BVN + 2 TIN = 8, the whole day's allowance.
-    for (let i = 0; i < 3; i++) assert.equal((await run(o, { type: "bvn", number: `2000000000${i}`, consent: true })).status, 201);
-    for (let i = 0; i < 2; i++) assert.equal((await run(o, { type: "tin" })).status, 201);
-    // CAC has not been used, but the daily total is.
-    const ninth = await run(o, { type: "cac" });
-    assert.equal(ninth.status, 429);
-    assert.equal(ninth.json.error.code, "check_limit");
-    assert.equal(calls.length, 8);
+    // The CAC check has its own allowance of 3.
+    for (let i = 0; i < 3; i++) assert.equal((await run(o, { type: "cac" })).status, 201);
+    const fourthCac = await run(o, { type: "cac" });
+    assert.equal(fourthCac.status, 429);
+    assert.equal(calls.length, 6);
   });
 
   it("when the provider is unavailable the owner gets a retry message and nothing is stored or counted", async () => {
@@ -314,16 +312,20 @@ describe("running a check", () => {
     assert.match(res.json.error.fields.type, /not registered with the CAC/);
   });
 
-  it("checks the TIN from the profile and compares the taxpayer name with the business or the owner", async () => {
+  it("BVN and TIN are not offered: both are refused", async () => {
     const o = await owner({ hasTin: "Yes", tin: "12345678-0001" });
-    answer = () => hit({ taxpayer_name: "Ada Obi", cac_reg_number: "RC1", firstin: "F", jittin: "J", tax_office: "T", phone_number: "0801", email: "e@x.com" });
-    const res = await run(o, { type: "tin" });
-    assert.equal(res.json.check.status, "Passed");
-    assert.deepEqual(calls[0].body, { number: "12345678-0001", channel: "TIN" });
-    const stored = JSON.stringify(await VerificationCheck.find({ owner: o.user.id }).lean());
-    assert.ok(!stored.includes("Ada Obi") && !stored.includes("e@x.com"));
-    const blank = await owner();
-    assert.equal((await run(blank, { type: "tin" })).status, 422);
+    assert.equal((await run(o, { type: "bvn", number: "22334455667", consent: true })).status, 422);
+    assert.equal((await run(o, { type: "tin" })).status, 422);
+    assert.equal(calls.length, 0);
+    assert.ok(!(await call("GET", "/api/verification", { cookie: o.cookie })).text.toLowerCase().includes("bvn"));
+  });
+
+  it("a business with no CAC number is told the CAC check is not needed", async () => {
+    const o = await owner({ hasCac: "No" });
+    const by = Object.fromEntries((await call("GET", "/api/verification", { cookie: o.cookie })).json.checks.map((c) => [c.type, c]));
+    assert.equal(by.cac.applicable, false);
+    assert.match(by.cac.reason, /Not needed/);
+    assert.equal(by.nin.applicable, true);
   });
 
   it("is for business owners only", async () => {
@@ -398,5 +400,83 @@ describe("deleting an account", () => {
     const del = await call("DELETE", "/api/account", { cookie: o.cookie, body: { password: "Secret123" } });
     assert.equal(del.status, 204);
     assert.equal(await VerificationCheck.countDocuments({ owner: o.user.id }), 0);
+  });
+});
+
+describe("the NIN at sign-up", () => {
+  const registerWith = (account = {}, business = {}) => call("POST", "/api/auth/register", { body: registrationBody({ account, business }) });
+
+  it("is required, with an agreement, and must be 11 digits", async () => {
+    for (const account of [{ nin: undefined }, { nin: "123" }, { nin: "1234 5678 901" }, { nin: 12345678901 }, { ninConsent: false }, { ninConsent: undefined }]) {
+      const res = await registerWith(account);
+      assert.equal(res.status, 422, JSON.stringify(account));
+      assert.ok(res.json.error.fields["account.nin"] || res.json.error.fields["account.ninConsent"], JSON.stringify(res.json.error.fields));
+    }
+    assert.equal(calls.length, 0);
+  });
+
+  it("is checked at sign-up when automated checks are on, and only its last four digits and a fingerprint are kept", async () => {
+    answer = (_p, _b) => ninRecord();
+    const res = await registerWith({ nin: "11122233344", phone: "+2348099911122" });
+    assert.equal(res.status, 201, res.text);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].body.number, "11122233344");
+    assert.equal(res.json.business.ninProvided, true);
+    assert.equal(res.json.business.ninMasked, "*******3344");
+    assert.ok(!res.text.includes("11122233344"), "the number is never returned");
+    const row = await VerificationCheck.findOne({ owner: res.json.user.id });
+    assert.equal(row.type, "nin");
+    assert.equal(row.status, "Passed");
+    const stored = await Business.findOne({ owner: res.json.user.id }).select("+ninHash").lean();
+    assert.equal(stored.ninHash.length, 64);
+    assert.ok(!JSON.stringify(stored).includes("11122233344"), "the database does not hold the number");
+    assert.ok(!JSON.stringify(res.json).includes("ninHash"));
+  });
+
+  it("never fails or slows sign-up when the provider is down, and the owner can run the check later", async () => {
+    answer = () => ({ status: 503, json: {} });
+    const res = await registerWith({ nin: "22233344455", phone: "+2348099911133" });
+    assert.equal(res.status, 201, res.text);
+    assert.equal(res.json.business.ninProvided, true);
+    assert.equal(await VerificationCheck.countDocuments({ owner: res.json.user.id }), 0);
+    answer = () => ninRecord();
+    const later = await run({ cookie: res.cookie }, { type: "nin", number: "22233344455", consent: true });
+    assert.equal(later.status, 201);
+  });
+
+  it("is still kept (last four digits only) when automated checks are off", async () => {
+    setPrembly(createPrembly(null));
+    const res = await registerWith({ nin: "33344455566", phone: "+2348099911144" });
+    assert.equal(res.status, 201, res.text);
+    assert.equal(res.json.business.ninMasked, "*******5566");
+    assert.equal(await VerificationCheck.countDocuments({ owner: res.json.user.id }), 0);
+  });
+});
+
+describe("Verified needs the NIN checked", () => {
+  const setStatus = (o, status) => call("POST", `/api/admin/businesses/${o.business.id}/status`, { cookie: admin, body: { status, note: "Reviewed." } });
+
+  it("refuses Verified until a NIN check has found a record, then allows it", async () => {
+    const o = await owner();
+    const refused = await setStatus(o, "Verified");
+    assert.equal(refused.status, 409);
+    assert.equal(refused.json.error.code, "nin_required");
+    assert.equal((await setStatus(o, "Pending Verification")).status, 200, "other statuses are not held back");
+
+    answer = () => ({ status: 400, json: {} });
+    await run(o, { type: "nin", number: NIN, consent: true });
+    assert.equal((await setStatus(o, "Verified")).status, 409, "a number the provider could not find is not enough");
+
+    answer = () => ninRecord({ firstname: "Emeka", middlename: "", surname: "Eze" });
+    await run(o, { type: "nin", number: "99988877766", consent: true });
+    const ok = await setStatus(o, "Verified");
+    assert.equal(ok.status, 200, "a record in a different name is for the reviewer to judge");
+    assert.ok(ok.json.business.nmrepId);
+  });
+
+  it("is not enforced while automated checks are off, so manual review keeps working", async () => {
+    const o = await owner();
+    setPrembly(createPrembly(null));
+    assert.equal((await setStatus(o, "Verified")).status, 200);
   });
 });

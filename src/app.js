@@ -12,6 +12,8 @@ import { adminLocationRoutes } from "./routes/admin-locations.js";
 import { adminPermanentRoutes } from "./routes/admin-permanent.js";
 import { locationRoutes } from "./routes/locations.js";
 import { adminSettingsRoutes } from "./routes/admin-settings.js";
+import { adminPaymentRoutes } from "./routes/admin-payments.js";
+import { adminVerificationRoutes } from "./routes/admin-verifications.js";
 import { adminToolsRoutes } from "./routes/admin-tools.js";
 import { opportunityRoutes } from "./routes/opportunities.js";
 import { partnerRoutes } from "./routes/partner.js";
@@ -97,6 +99,8 @@ export function createApp(config, { log = true } = {}) {
   app.use("/api/admin", adminOpportunityRoutes({ config }));
   app.use("/api/admin", adminOrganisationRoutes({ config }));
   app.use("/api/admin/settings", adminSettingsRoutes({ config }));
+  app.use("/api/admin/payments", adminPaymentRoutes({ config }));
+  app.use("/api/admin/verifications", adminVerificationRoutes({ config }));
   app.use("/api/admin/permanent", adminPermanentRoutes({ config, limiters }));
   app.use("/api/admin/locations", adminLocationRoutes({ config }));
   app.use("/api/lgas", locationRoutes());

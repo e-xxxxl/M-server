@@ -245,17 +245,16 @@ describe("business profile and dashboard", () => {
     }
   });
 
-  it("returns dashboard data with progress and next actions", async () => {
+  it("returns dashboard data with progress, and no recommended next actions", async () => {
     const { cookie } = await signUp();
     const res = await call("GET", "/api/dashboard", { cookie, origin: null });
     assert.equal(res.status, 200);
     assert.equal(res.json.insights.progress.total, 26);
     assert.equal(res.json.insights.progress.completed, 15, "the 15 required fields are filled at sign-up");
-    const ids = res.json.insights.nextActions.map((a) => a.id);
-    for (const id of ["cac", "tin", "bank", "opportunities", "branches", "digital"]) assert.ok(ids.includes(id), id);
+    assert.deepEqual(res.json.insights.nextActions, [], "recommended next actions were removed");
   });
 
-  it("updates the profile and the next actions shrink as details are added", async () => {
+  it("updates the profile and the progress grows as details are added", async () => {
     const { cookie } = await signUp();
     const before = await call("GET", "/api/dashboard", { cookie, origin: null });
     const res = await call("PATCH", "/api/business", {

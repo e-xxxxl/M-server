@@ -1,12 +1,13 @@
 import { Router } from "express";
 import mongoose from "mongoose";
 import { compareFit, evaluate } from "../lib/eligibility.js";
+import { howToQualify } from "../lib/how-to-qualify.js";
 import { openOpportunitiesFor, organisationActive } from "../lib/open-opportunities.js";
 import { editable, withdrawable } from "../lib/opportunity-constants.js";
 import { categoryKeys, describeSharing, sharingCategories } from "../lib/sharing.js";
-import { documentsSharingNow } from "../lib/documents.js";
+import { DOCUMENT_WARNING_DAYS, documentsSharingNow } from "../lib/documents.js";
 import { profileFieldNames, idParamSchema } from "../schemas.js";
-import { applicationSaveSchema, notificationReadSchema, opportunityQuerySchema } from "../schemas-opportunities.js";
+import { applicationSaveSchema, extendDocumentsSchema, notificationReadSchema, opportunityQuerySchema } from "../schemas-opportunities.js";
 import { Application } from "../models/Application.js";
 import { Business } from "../models/Business.js";
 import { Document } from "../models/Document.js";
@@ -40,7 +41,7 @@ const fitSummary = (fit) => ({ label: fit.label, met: fit.met, total: fit.total,
 function snapshotOf(business) {
   const json = business.toJSON();
   const snapshot = {};
-  for (const name of [...profileFieldNames, "hasCac", "hasTin", "verificationStatus", "nmrepId"]) snapshot[name] = json[name] ?? null;
+  for (const name of [...profileFieldNames, "hasCac", "hasTin", "verificationStatus", "nmrepId", "description", "businessSize", "monthlyRevenue", "assetsValue"]) snapshot[name] = json[name] ?? null;
   return snapshot;
 }
 
@@ -101,10 +102,14 @@ export function opportunityRoutes({ config }) {
     const business = await ownBusiness(req);
     // Which of the documents this opportunity asks for are already in the owner's wallet.
     const inWallet = new Set(await Document.distinct("kind", { owner: req.user._id }));
+    const documentsNeeded = (opportunity.requiredDocuments ?? []).map((kind) => ({ kind, inWallet: inWallet.has(kind) }));
+    const fit = evaluate(opportunity.criteria, business);
     res.json({
       opportunity: { ...publicOpportunity(opportunity), organisationName: org?.name ?? null },
-      documentsNeeded: (opportunity.requiredDocuments ?? []).map((kind) => ({ kind, inWallet: inWallet.has(kind) })),
-      fit: evaluate(opportunity.criteria, business),
+      documentsNeeded,
+      fit,
+      // What is still missing, step by step, for the requirements and the documents.
+      howToQualify: howToQualify(fit, documentsNeeded),
       acceptingApplications: opportunity.isAcceptingApplications() && organisationActive(org),
       // What the owner would be agreeing to share if they apply.
       sharing: describeSharing(org?.name ?? null),
@@ -289,6 +294,8 @@ export function opportunityRoutes({ config }) {
   const consentView = (c) => ({
     ...c.toJSON(),
     documentsSharing: documentsSharingNow(c),
+    // True in the last days before the end date, so a screen can offer to extend.
+    documentsEndingSoon: documentsSharingNow(c) && Boolean(c.documentsExpireAt) && c.documentsExpireAt.getTime() - Date.now() <= DOCUMENT_WARNING_DAYS * 24 * 60 * 60 * 1000,
     categoryDetails: c.categories.map((k) => ({ key: k, label: sharingCategories[k]?.label ?? k, description: sharingCategories[k]?.description ?? "" })),
   });
   consents.get("/", async (req, res) => {
@@ -303,6 +310,23 @@ export function opportunityRoutes({ config }) {
     if (!consent) throw new ApiError(404, "not_found", "Not found.");
     if (!documentsSharingNow(consent)) throw new ApiError(409, "not_sharing", "These documents are not being shared now.");
     consent.documentsExpireAt = new Date();
+    await consent.save();
+    res.json({ consent: consentView(consent) });
+  });
+
+  // Keeps sharing the documents of one application for longer, without submitting the application again. Only an
+  // agreement that has an end date can be extended, and not one that ended with the application. The new end date counts
+  // from the old one (or from today if it has passed).
+  consents.post("/:id/extend-documents", async (req, res) => {
+    const { days } = extendDocumentsSchema.parse(req.body);
+    const parsed = idParamSchema.safeParse(req.params.id);
+    const consent = parsed.success ? await ConsentRecord.findOne({ _id: parsed.data, owner: req.user._id }) : null;
+    if (!consent) throw new ApiError(404, "not_found", "Not found.");
+    if (consent.revokedAt) throw new ApiError(409, "ended", "This agreement has ended because the application was withdrawn.");
+    if (!consent.categories.includes("documents") || consent.documents.length === 0) throw new ApiError(409, "no_documents", "No documents are shared on this application.");
+    if (!consent.documentsExpireAt) throw new ApiError(409, "no_end_date", "These documents are shared until the application is withdrawn, so there is nothing to extend.");
+    const from = Math.max(Date.now(), consent.documentsExpireAt.getTime());
+    consent.documentsExpireAt = new Date(from + days * 24 * 60 * 60 * 1000);
     await consent.save();
     res.json({ consent: consentView(consent) });
   });

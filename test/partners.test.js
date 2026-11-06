@@ -329,7 +329,7 @@ describe("consent and what a partner can see", () => {
     assert.equal(detail.json.sharing.with, p.name);
     assert.deepEqual(detail.json.sharing.categories.map((c) => c.key), ["summary", "contact", "profile", "documents"]);
     assert.equal(detail.json.sharing.categories[0].required, true);
-    assert.match(detail.json.sharing.neverShared, /NIN, BVN/);
+    assert.match(detail.json.sharing.neverShared, /NIN and bank account numbers/);
 
     const none = await call("POST", "/api/applications", { cookie: o.cookie, body: { opportunityId: id, submit: true } });
     assert.equal(none.status, 422);
@@ -387,7 +387,7 @@ describe("consent and what a partner can see", () => {
     assert.equal(detail.json.applicant.profile.cacNumber, "RC7654321");
     assert.equal(detail.json.applicant.profile.bankName, "Secret Bank");
     const text = JSON.stringify(detail.json);
-    assert.ok(!/"(nin|bvn|accountNumber|referral)"/i.test(text), "no identity numbers exist to share");
+    assert.ok(!/"(nin|accountNumber|referral)"/i.test(text), "no identity numbers exist to share");
   });
 
   it("records what was shared, with whom, why and when, and shows it to the owner", async () => {

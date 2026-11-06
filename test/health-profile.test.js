@@ -70,7 +70,7 @@ describe("the health profile", () => {
     assert.equal(item(before, "registration", "cac").done, false);
     assert.equal(item(before, "registration", "tin").done, false);
     assert.equal(item(before, "information", "digital").done, false);
-    assert.equal(item(before, "information", "financial").detail, "2 of 4 details", "the revenue band and the loans answer are filled at registration; bank and funding need are not");
+    assert.equal(item(before, "information", "financial").detail, "2 of 2 details", "only the required details count: the revenue band and the loans answer");
     assert.equal(item(before, "information", "identity").done, true);
     assert.equal(item(before, "information", "location").done, true);
 
@@ -115,15 +115,17 @@ describe("the health profile", () => {
     assert.deepEqual(item(hp, "documents", "tax-clearance").link, { screen: "documents" });
   });
 
-  it("suggests at most five things not yet done, with where to do them", async () => {
+  it("recommends nothing: next steps were removed", async () => {
     const o = await owner();
     const hp = (await call("GET", "/api/health-profile", { cookie: o.cookie })).json;
-    assert.ok(hp.nextSteps.length > 0 && hp.nextSteps.length <= 5);
-    for (const s of hp.nextSteps) {
-      assert.ok(s.label && s.hint && s.area);
-      assert.ok(s.link === null || ["profile", "documents"].includes(s.link.screen));
-    }
-    assert.ok(hp.nextSteps.every((s, i, all) => all.findIndex((x) => x.label === s.label) === i), "no repeats");
+    assert.deepEqual(hp.nextSteps, []);
+  });
+
+  it("a section is complete once the required details are filled, even with the optional ones blank", async () => {
+    const o = await owner();
+    const hp = (await call("GET", "/api/health-profile", { cookie: o.cookie })).json;
+    assert.equal(item(hp, "information", "operations").done, true, "branches is optional");
+    assert.equal(item(hp, "information", "financial").done, true, "the bank and the size of opportunity are optional");
   });
 
   it("is for business owners only", async () => {

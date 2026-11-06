@@ -85,19 +85,20 @@ export function loadConfig(env = process.env) {
       enabled: env.REMINDERS_ENABLED !== "false",
       intervalMinutes: Number(env.REMINDERS_INTERVAL_MINUTES ?? 60),
     },
-    // Automated identity and business checks through Prembly (NIN, BVN, CAC, TIN). Server side only. Without both
+    // Automated identity and business checks through Prembly (NIN and CAC only). Server side only. Without both
     // PREMBLY_API_KEY and VERIFICATION_HASH_KEY the feature is off and everything else still works.
     verification: {
       apiKey: env.PREMBLY_API_KEY ?? "",
       baseUrl: (env.PREMBLY_BASE_URL ?? "https://api.prembly.com").replace(/\/+$/, ""),
-      // A long random secret used to fingerprint NIN and BVN numbers (HMAC), so the same number used on two accounts
+      // A long random secret used to fingerprint NIN numbers (HMAC), so the same number used on two accounts
       // can be noticed without the number itself ever being stored. Never change it after launch.
       hashKey: env.VERIFICATION_HASH_KEY ?? "",
       // Every provider call can cost money, so each type of check is limited per business per rolling 24 hours.
       maxPerTypePerDay: Number(env.VERIFICATION_MAX_PER_TYPE_PER_DAY ?? 3),
       maxPerDay: Number(env.VERIFICATION_MAX_PER_DAY ?? 8),
-      // Prembly's test mode answers with made up data ("is_sandbox": true). Allowed everywhere except production.
-      allowSandbox: nodeEnv !== "production",
+      // Prembly's test mode answers with made up data ("is_sandbox": true). Allowed everywhere except production, unless
+      // PREMBLY_ALLOW_SANDBOX=true is set to try a sandbox key on a live server. Turn it off again before real owners use it.
+      allowSandbox: nodeEnv !== "production" || env.PREMBLY_ALLOW_SANDBOX === "true",
     },
     // The document wallet. Files are encrypted (AES-256-GCM) before they are written to a private folder on this
     // server. Without a 32 byte key (base64) the wallet is off and everything else still works.

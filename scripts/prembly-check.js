@@ -24,10 +24,7 @@ if (!key.startsWith("test_") && !live) {
 // The sample numbers from Prembly's documentation. In test mode any value is accepted.
 const checks = [
   ["NIN", "/verification/vnin-basic", { number: "56182742701" }],
-  ["BVN", "/verification/bvn_validation", { number: "54651333604" }],
   ["CAC", "/verification/cac/basic", { rc_number: "092932", company_type: "RC" }],
-  ["TIN (channel TIN, what NMREP sends)", "/verification/tin", { number: "12345678-0001", channel: "TIN" }],
-  ["TIN (channel CAC, the documentation sample)", "/verification/tin", { number: "Rc323479", channel: "CAC" }],
 ];
 
 for (const [label, path, body] of checks) {

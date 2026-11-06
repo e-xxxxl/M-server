@@ -45,6 +45,9 @@ export const annualRevenues = [
 
 export const existingLoans = ["No", "Yes"];
 
+/** How an owner would like to be trained. An empty answer means no answer. */
+export const trainingFormats = ["In person", "Online", "Hybrid", "No preference"];
+
 export const fundingNeeds = [
   "Not looking for an opportunity now",
   "Less than 1 million naira",

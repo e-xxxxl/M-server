@@ -8,6 +8,7 @@ import { Opportunity } from "../models/Opportunity.js";
 import { TrainingRecord } from "../models/TrainingRecord.js";
 import { User } from "../models/User.js";
 import { newCertificateCode, normalizeCertificateCode } from "./codes.js";
+import { openOpportunitiesFor } from "./open-opportunities.js";
 import { applyReview } from "./review.js";
 
 /**
@@ -349,5 +350,104 @@ export async function certificateByCode(value) {
     mode: opportunity.training?.mode ?? null,
     issuedAt,
     completedOn: record.completedAt,
+  };
+}
+
+// ------------------------------------------------------------------ recommendations
+
+const answerableStatuses = [null, "Draft", "Withdrawn"];
+
+/**
+ * Open trainings that match what the business said it needs help with (its skill gaps), best match first: more gaps
+ * covered, then the way the owner likes to learn, then how well the business fits the entry rules. Trainings the owner
+ * has already applied to are left out. A business with no skill gaps gets none: nothing is guessed from the profile.
+ */
+export async function recommendedTrainings(business, ownerId) {
+  const gaps = business.skillGaps ?? [];
+  if (gaps.length === 0) return [];
+  const found = await openOpportunitiesFor(business, ownerId, { filter: { type: "Training", tags: mongoose.trusted({ $in: gaps }) } });
+  const wanted = business.preferredFormat && business.preferredFormat !== "No preference" ? business.preferredFormat : null;
+  const rank = { Eligible: 0, "Nearly eligible": 1, "Not eligible": 2 };
+  return found
+    .filter((i) => answerableStatuses.includes(i.applicationStatus))
+    .map(({ opportunity: o, organisationName, fit, applicationStatus }) => ({
+      id: idOf(o._id),
+      title: o.title,
+      provider: o.provider,
+      organisationName,
+      summary: o.description.replace(/\s+/g, " ").trim().slice(0, 160),
+      tags: o.tags,
+      matchedGaps: o.tags.filter((t) => gaps.includes(t)),
+      mode: o.training?.mode ?? null,
+      matchesFormat: wanted ? (o.training?.mode ?? null) === wanted : null,
+      startsOn: o.training?.startsOn ?? null,
+      deadline: o.deadline,
+      fit: { label: fit.label, met: fit.met, total: fit.total, requiredMissing: fit.requiredMissing },
+      applicationStatus,
+    }))
+    .sort(
+      (a, b) =>
+        b.matchedGaps.length - a.matchedGaps.length ||
+        Number(b.matchesFormat === true) - Number(a.matchesFormat === true) ||
+        (rank[a.fit.label] ?? 2) - (rank[b.fit.label] ?? 2) ||
+        a.title.localeCompare(b.title),
+    );
+}
+
+// ------------------------------------------------------------------ the report
+
+const rate = (part, whole) => (whole > 0 ? Math.round((part / whole) * 1000) / 10 : null);
+
+/**
+ * How the trainings in scope went, in counts and percentages only (no names, so it is the same for a partner and for
+ * NMREP). Attendance is out of the marks the provider recorded: a session never marked is not counted as absent.
+ */
+export async function trainingReport(scope) {
+  const trainings = await Opportunity.find({ ...scope, type: "Training" }).sort({ createdAt: -1 }).limit(200);
+  const ids = trainings.map((o) => o._id);
+  const applications = await Application.find({ opportunity: mongoose.trusted({ $in: ids }), status: mongoose.trusted({ $in: participantStatuses }) }).select("opportunity status");
+  const records = await TrainingRecord.find({ opportunity: mongoose.trusted({ $in: ids }) }).select("opportunity attendance assessment certificate revoked");
+  const empty = () => ({ participants: 0, completed: 0, marks: 0, present: 0, assessed: 0, passed: 0, certificatesIssued: 0, certificatesWithdrawn: 0 });
+  const by = new Map(ids.map((id) => [idOf(id), empty()]));
+  for (const a of applications) {
+    const c = by.get(idOf(a.opportunity));
+    c.participants += 1;
+    if (a.status === "Completed") c.completed += 1;
+  }
+  for (const r of records) {
+    const c = by.get(idOf(r.opportunity));
+    for (const x of r.attendance) {
+      c.marks += 1;
+      if (x.present) c.present += 1;
+    }
+    if (r.assessment?.result) {
+      c.assessed += 1;
+      if (r.assessment.result === "Passed") c.passed += 1;
+    }
+    if (r.certificate?.code) c.certificatesIssued += 1;
+    else if ((r.revoked ?? []).length > 0) c.certificatesWithdrawn += 1;
+  }
+  const figures = (c) => ({
+    participants: c.participants,
+    completed: c.completed,
+    completionRate: rate(c.completed, c.participants),
+    attendanceRate: rate(c.present, c.marks),
+    assessed: c.assessed,
+    passRate: rate(c.passed, c.assessed),
+    certificatesIssued: c.certificatesIssued,
+    certificatesWithdrawn: c.certificatesWithdrawn,
+  });
+  const total = empty();
+  for (const c of by.values()) for (const k of Object.keys(total)) total[k] += c[k];
+  return {
+    totals: { trainings: trainings.length, ...figures(total) },
+    items: trainings.map((o) => ({
+      id: idOf(o._id),
+      title: o.title,
+      status: o.status,
+      startsOn: o.training?.startsOn ?? null,
+      sessions: o.training?.sessions?.length ?? 0,
+      ...figures(by.get(idOf(o._id))),
+    })),
   };
 }

@@ -221,7 +221,14 @@ export const applicationSaveSchema = z
   })
   .strict();
 
-export const applicationStatusSchema = z.object({ status: oneOf(applicationStatuses), note: text(200) }).strict();
+/** How many more days to share the documents of an application: 7, 30, 90 or 180. */
+export const extendDocumentsSchema = z
+  .object({
+    days: z.number({ message: "Choose 7, 30, 90 or 180 days." }).refine((v) => [7, 30, 90, 180].includes(v), "Choose 7, 30, 90 or 180 days."),
+  })
+  .strict();
+
+export const applicationStatusSchema =z.object({ status: oneOf(applicationStatuses), note: text(200) }).strict();
 
 export const opportunityQuerySchema = z
   .object({
