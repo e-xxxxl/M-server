@@ -60,9 +60,8 @@ configurePrembly(config);
 configurePaystack(config);
 configureAlatpay(config);
 configurePush(config);
-if (config.push.enabled && !push.enabled) {
-  console.warn("Push notifications are off: no usable Firebase service account (set FIREBASE_SERVICE_ACCOUNT_FILE to the key file). Owners still get in-app notifications and email.");
-}
+if (!config.push.enabled) console.log("Push notifications are switched off (PUSH_ENABLED=false). Owners still get in-app notifications and email.");
+else if (!push.firebase) console.log("Push: Expo push tokens are delivered. Raw Firebase device tokens are not, because no Firebase service account key is set (FIREBASE_SERVICE_ACCOUNT_FILE).");
 if (config.payments.enabled) {
   const paystackTest = config.payments.gateway === "paystack" && config.payments.secretKey.startsWith("sk_test_");
   console.log(`Registration fee is ON: N${config.payments.registrationFeeNaira} a year through ${config.payments.gateway === "alatpay" ? "ALATPay (bank transfer)" : "Paystack"}.${paystackTest ? " (test key)" : ""}`);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
-import { createReviewAccount, makeReviewPassword } from "../src/lib/review-account.js";
+import { createReviewAccount, inspectReviewAccount, makeReviewPassword } from "../src/lib/review-account.js";
 import { Business } from "../src/models/Business.js";
 import { User } from "../src/models/User.js";
 import { passwordSchema } from "../src/schemas.js";
@@ -87,5 +87,48 @@ describe("creating the review account", () => {
     const business = await Business.findOne({ owner: (await User.findOne({ email: made.email }))._id });
     assert.equal(business.verificationStatus, "Verified");
     assert.match(business.nmrepId, /^NMREP-\d{4}-\d{8}$/);
+  });
+});
+
+describe("checking the review account", () => {
+  const problems = (results) => results.filter((r) => r.ok === false).map((r) => r.label);
+
+  it("finds nothing wrong with a fresh account, and confirms the right password only", async () => {
+    const made = await createReviewAccount(ctx.config, { email: mail(), phone: phone() });
+    const ok = await inspectReviewAccount(ctx.config, { email: made.email, password: made.password });
+    assert.deepEqual(problems(ok), [], JSON.stringify(ok.filter((r) => r.ok === false)));
+    assert.equal(ok.find((r) => r.label === "Documents screen works").ok, null, "server settings are information, not a fault of the account");
+    assert.ok(ok.find((r) => r.label === "The password you typed is correct").ok);
+    const wrong = await inspectReviewAccount(ctx.config, { email: made.email, password: "Not-the-one-1" });
+    assert.equal(wrong.find((r) => r.label === "The password you typed is correct").ok, false);
+  });
+
+  it("says so when the account does not exist", async () => {
+    const r = await inspectReviewAccount(ctx.config, { email: mail() });
+    assert.equal(r.length, 1);
+    assert.equal(r[0].ok, false);
+  });
+
+  it("flags every way the account could fail a reviewer", async () => {
+    const made = await createReviewAccount(ctx.config, { email: mail(), phone: phone() });
+    const user = await User.findOne({ email: made.email });
+    user.registrationPaidUntil = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
+    user.emailVerifiedAt = null;
+    user.lockUntil = new Date(Date.now() + 60_000);
+    await user.save();
+    await Business.updateOne({ owner: user._id }, { $set: { verificationStatus: "Suspended" } });
+    const bad = problems(await inspectReviewAccount(ctx.config, { email: made.email }));
+    for (const expected of ["There is enough paid time for a store review", "The email is confirmed (no banner)", "It is not locked after failed sign-ins", "The business is not suspended"]) assert.ok(bad.includes(expected), expected);
+
+    user.registrationPaidUntil = new Date(Date.now() - 1000);
+    await user.save();
+    assert.ok(problems(await inspectReviewAccount(ctx.config, { email: made.email })).includes("The registration fee is paid (no payment page)"));
+  });
+
+  it("changes nothing", async () => {
+    const made = await createReviewAccount(ctx.config, { email: mail(), phone: phone() });
+    const before = JSON.stringify(await User.findOne({ email: made.email }).select("+passwordHash").lean());
+    await inspectReviewAccount(ctx.config, { email: made.email, password: made.password });
+    assert.equal(JSON.stringify(await User.findOne({ email: made.email }).select("+passwordHash").lean()), before);
   });
 });

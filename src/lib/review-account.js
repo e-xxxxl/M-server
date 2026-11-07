@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import mongoose from "mongoose";
 import { hashPassword } from "./crypto.js";
 import { issueNmrepId } from "./ids.js";
 import { Business } from "../models/Business.js";
@@ -103,4 +104,60 @@ export async function createReviewAccount(config, { email, phone, years = 2, res
     throw err;
   }
   return { created: true, email, phone, password, paidUntil };
+}
+
+/**
+ * Reads the review account and says, check by check, whether a store reviewer can use it. Read only: it changes nothing.
+ * `password` is optional; when given it is only compared with the stored hash. Each result is { label, ok, detail }
+ * where ok is true, false, or null for something worth knowing that is not a fault.
+ */
+export async function inspectReviewAccount(config, { email, password = "", now = new Date() }) {
+  const results = [];
+  const add = (label, ok, detail = "") => results.push({ label, ok, detail });
+
+  const user = await User.findOne({ email }).select("+passwordHash +failedLogins +lockUntil");
+  add("The account exists", Boolean(user), user ? "" : `No account for ${email}. Run: npm run review-account`);
+  if (!user) return results;
+
+  add("It is a business owner account", user.role === "msme_owner", `role: ${user.role}`);
+  add("It is active (not deactivated)", user.active !== false);
+  add("It is not locked after failed sign-ins", !(user.lockUntil && user.lockUntil > now), user.lockUntil && user.lockUntil > now ? `locked until ${user.lockUntil.toISOString()}` : `${user.failedLogins ?? 0} failed attempts on record`);
+  add("The email is confirmed (no banner)", Boolean(user.emailVerifiedAt));
+  add("The terms were accepted", Boolean(user.termsAcceptedAt));
+
+  if (!config.payments.enabled) add("The registration fee", null, "The fee is switched off on this server, so nobody sees the payment page.");
+  else {
+    const left = user.registrationPaidUntil ? (user.registrationPaidUntil.getTime() - now.getTime()) / (24 * 60 * 60 * 1000) : -1;
+    add("The registration fee is paid (no payment page)", left > 0, left > 0 ? `paid until ${user.registrationPaidUntil.toISOString().slice(0, 10)} (${Math.floor(left)} days left)` : "Not paid or expired. Run: npm run review-account -- --reset-password");
+    if (left > 0) add("There is enough paid time for a store review", left >= 60, left >= 60 ? "" : "Less than 60 days left. Run: npm run review-account -- --reset-password");
+  }
+
+  const businesses = await Business.find({ owner: user._id });
+  add("It has exactly one business", businesses.length === 1, `${businesses.length} found`);
+  const business = businesses[0];
+  if (business) {
+    let valid = true;
+    try {
+      await business.validate();
+    } catch {
+      valid = false;
+    }
+    add("The business record is complete and valid", valid);
+    add("The business is not suspended", business.verificationStatus !== "Suspended", `status: ${business.verificationStatus}`);
+    add("The business status", null, business.verificationStatus === "Verified" ? `Verified (${business.nmrepId})` : business.verificationStatus);
+  }
+
+  const sharing = user.phoneKey ? await User.countDocuments({ phoneKey: user.phoneKey, _id: mongoose.trusted({ $ne: user._id }) }) : 0;
+  add("Its phone number is not shared with another account", sharing === 0, sharing ? `${sharing} other account(s) use it, so phone sign-in will not work` : user.phone);
+
+  if (password) {
+    const { verifyPassword } = await import("./crypto.js");
+    add("The password you typed is correct", await verifyPassword(password, user.passwordHash));
+  }
+
+  // What the reviewer will meet on this server. Not faults of the account (shown as INFO when off), but worth knowing before submitting.
+  add("Documents screen works", config.documents.encryptionKey ? true : null, config.documents.encryptionKey ? "" : "Document storage is OFF (DOCUMENT_ENCRYPTION_KEY): the Documents screen says it is not available");
+  add("Automated verification is on", config.verification.apiKey && String(config.verification.hashKey).length >= 32 ? true : null, "If off, the Verify my NIN and CAC buttons are disabled");
+  add("Email can be sent", config.email.apiKey && config.email.from ? true : null, "If off, no emails go out (password reset links included)");
+  return results;
 }

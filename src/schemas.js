@@ -2,6 +2,7 @@ import { z } from "zod";
 import * as o from "./options.js";
 import { normalizeReferralCode } from "./lib/codes.js";
 import { interestAreas, skillAreas } from "./lib/opportunity-constants.js";
+import { optionalDevicePushToken, pushTokenSchema } from "./lib/push-token.js";
 
 // Plain wording for the two mistakes a client most often makes: leaving a field out, and sending it empty.
 // Every other message is written next to its rule below.
@@ -166,6 +167,8 @@ export const registerSchema = z
     acceptedTerms: z.literal(true, { message: "You must agree to the terms to continue." }),
     confirmedAccurate: z.literal(true, { message: "Please confirm the information is accurate." }),
     referralCode: referralCodeSchema,
+    // The phone's push token (optional; missing or "" means none).
+    devicePushToken: optionalDevicePushToken,
   })
   .strict();
 
@@ -179,6 +182,8 @@ export const loginSchema = z
     identifier: z.string().trim().min(1, "Enter your email or phone number.").max(254).optional(),
     email: z.string().trim().min(1, "Enter your email or phone number.").max(254).optional(),
     password: z.string().min(1).max(200),
+    // The phone's push token (optional; missing or "" means none).
+    devicePushToken: optionalDevicePushToken,
   })
   .strict()
   .refine((v) => v.identifier || v.email, { message: "Enter your email or phone number.", path: ["identifier"] });
@@ -348,3 +353,6 @@ export const pageQuerySchema = z
   .strict();
 
 export const idParamSchema = objectId;
+
+/** POST /api/account/push-token: the signed-in phone's token. An empty string stops push to this sign-in. */
+export const pushTokenBodySchema = z.object({ devicePushToken: z.union([z.literal(""), pushTokenSchema]) }).strict();

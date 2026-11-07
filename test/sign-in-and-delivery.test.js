@@ -108,8 +108,8 @@ describe("phones for push notifications", () => {
     const b = await owner();
     assert.equal((await register(a, "not-a-token")).status, 422);
     const expo = await register(a, "ExponentPushToken[abcdefghijklmnopqrst0001]");
-    assert.equal(expo.status, 422, "an Expo token is not a Firebase token");
-    assert.match(expo.json.error.fields.token, /Firebase/);
+    assert.equal(expo.status, 201, "an Expo token is accepted");
+    assert.match((await register(a, "ExponentPushToken[]")).json.error.fields.token, /push token/);
     assert.equal((await call("POST", "/api/devices", { cookie: a.cookie, body: { token: token(1), platform: "windows" } })).status, 422);
     assert.equal((await call("POST", "/api/devices", { body: { token: token(1), platform: "ios" } })).status, 401);
 
@@ -172,7 +172,8 @@ describe("push notifications", () => {
     assert.match(sent[0].title, /verification status/i);
     assert.equal(sent[0].body, "", "no staff text in a push about a decision");
     assert.equal(sent[0].data.type, "verification");
-    assert.equal(sent[0].data.link, "/dashboard/");
+    assert.equal(sent[0].data.link, "/notifications", "every alert opens the inbox in the app");
+    assert.equal(sent[0].data.webLink, "/dashboard/");
     assert.ok(sent[0].data.notificationId);
     assert.ok(!JSON.stringify(sent).includes(note));
 

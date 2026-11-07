@@ -732,12 +732,12 @@ What to know:
 
 ### 10.9 Push notifications, "Stop these emails" links and reminders
 
-- **Push** goes through Firebase Cloud Messaging. It is **off until you give the server a Firebase service account key**:
+- **Push** has two routes, chosen by the phone's token. **Expo push tokens** (`ExponentPushToken[...]`) work out of the box (set `EXPO_ACCESS_TOKEN` only if you turned on enhanced push security in your Expo account). **Raw Firebase device tokens** go through Firebase Cloud Messaging and are **skipped until you give the server a Firebase service account key**:
   1. In the Firebase console (the project the phone app uses): Project settings, Service accounts, **Generate new private key**. A JSON file downloads. **It is a secret**: treat it like a password, never commit it, email it or paste it in a message.
   2. Upload it to the server outside the website folder, for example `/opt/nmrep/shared/firebase-service-account.json`, owned by the service user, with `chmod 600`.
   3. Add `FIREBASE_SERVICE_ACCOUNT_FILE=/opt/nmrep/shared/firebase-service-account.json` to `/opt/nmrep/shared/.env` and restart. If the key cannot be used the log says "Push notifications are off"; the key itself is never printed.
   4. In the Google Cloud console for the same project, check that the **Firebase Cloud Messaging API** is enabled (it normally is).
-  5. Try it: `npm run push-check -- <the phone's Firebase device token>` sends one test notification. The phone app can also call `POST /api/devices/test` to send one to itself.
+  5. Try it: `npm run push-check -- <the phone's push token>` sends one test notification. The phone app can also call `POST /api/devices/test` to send one to itself.
   The app developer adds the app to the same Firebase project (`google-services.json` for Android; `GoogleService-Info.plist` for iOS, with an Apple APNs authentication key uploaded in the Firebase console). `PUSH_ENABLED=false` switches push off on purpose.
 - **UNSUBSCRIBE_SECRET** signs the "Stop these emails" link in notification emails. Set it once to a long random value and never change it, otherwise old links in sent emails stop working. Create one with `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"` and add it to `/opt/nmrep/shared/.env`. The server warns on start while it is missing.
 - **Reminders** (a programme closing in 3 days and 1 day, a training session tomorrow) run inside the API every hour and never send the same reminder twice. `REMINDERS_ENABLED=false` switches them off.
@@ -865,4 +865,5 @@ It creates a normal business owner account (`playstore.review@nmrep.org` by defa
 
 - `--reset-password` gives the existing account a new password and more paid time (use it before resubmitting, or if you lose the password).
 - `--years 1` to `10` changes how long it stays paid. `--email` and `--phone` change the sign-in details. `--verified` also marks the sample business Verified.
+- `--check` changes nothing and tells you, line by line, whether the account is ready for a reviewer: exists, active, not locked, email confirmed, fee paid with enough time left (at least 60 days), one valid business, not suspended, phone not shared. It also shows (as INFO) whether document storage, automated verification and email are switched on on this server. Add `--test-password` and type the password when asked (it is not shown) to prove the password you saved is the right one.
 - It is a real record in your registry. When the review is finished, a super admin can remove it in the admin portal (Businesses, then Permanent delete).

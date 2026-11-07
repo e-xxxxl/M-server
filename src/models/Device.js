@@ -11,7 +11,10 @@ const deviceSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
     token: { type: String, required: true, unique: true, maxlength: 4096 },
-    platform: { type: String, enum: devicePlatforms, required: true },
+    // Not known when the token arrives with a sign-in. "unknown" until the app says which.
+    platform: { type: String, enum: [...devicePlatforms, "unknown"], default: "unknown" },
+    // The sign-in this token came with. When that sign-in ends (logout, sign out everywhere, expiry), delivery to it stops.
+    session: { type: mongoose.Schema.Types.ObjectId, ref: "Session", default: null, index: true },
     lastSeenAt: { type: Date, default: Date.now },
   },
   {
@@ -22,6 +25,7 @@ const deviceSchema = new mongoose.Schema(
         delete ret._id;
         delete ret.__v;
         delete ret.user;
+        delete ret.session;
         return ret;
       },
     },

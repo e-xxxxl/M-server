@@ -91,6 +91,7 @@ describe("the message", () => {
     assert.deepEqual(message.notification, { title: "Your application", body: "Open it" });
     assert.deepEqual(message.data, { link: "/dashboard/applications/", type: "application", notificationId: "12345" });
     assert.equal(message.android.priority, "HIGH");
+    assert.equal(message.android.notification.channel_id, "alerts");
     assert.equal(message.apns.headers["apns-priority"], "10");
     assert.equal(message.apns.payload.aps.sound, "default");
   });
@@ -153,9 +154,11 @@ describe("answers from Firebase", () => {
 describe("switching it on", () => {
   it("is off without credentials, and off when switched off on purpose", () => {
     assert.equal(createPushSender(null).enabled, false);
-    assert.equal(createPushSender({ enabled: true, credentials: null }).enabled, false);
+    assert.equal(createPushSender({ enabled: true, credentials: null }).enabled, true, "Expo tokens still work without a Firebase key");
+    assert.equal(createPushSender({ enabled: true, credentials: null }).firebase, false);
     assert.equal(createPushSender({ enabled: false, credentials }).enabled, false);
     assert.equal(createPushSender({ enabled: true, credentials }).enabled, true);
+    assert.equal(createPushSender({ enabled: true, credentials }).firebase, true);
   });
 
   it("reads the service account from a file or from base64, and from nothing else", () => {

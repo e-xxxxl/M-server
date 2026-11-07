@@ -6,9 +6,10 @@ import { User } from "../models/User.js";
 import { hashPassword, verifyPassword } from "../lib/crypto.js";
 import { ApiError } from "../middleware/errors.js";
 import { clearSessionCookie, requireAuth } from "../middleware/security.js";
-import { accountPatchSchema, deleteAccountSchema, notificationSettingsSchema, passwordChangeSchema } from "../schemas.js";
+import { accountPatchSchema, deleteAccountSchema, notificationSettingsSchema, passwordChangeSchema, pushTokenBodySchema } from "../schemas.js";
 import { deleteOwnerData } from "../lib/account-deletion.js";
 import { phoneKey } from "../lib/phone-key.js";
+import { removeSessionDevices, removeUserDevices, saveDeviceToken } from "../lib/devices.js";
 
 export function accountRoutes({ config, limiters }) {
   const router = Router();
@@ -26,6 +27,18 @@ export function accountRoutes({ config, limiters }) {
     if (patch.push !== undefined) req.user.pushNotifications = patch.push;
     await req.user.save();
     res.json({ settings: settingsOf(req.user) });
+  });
+
+  // The phone's push token for THIS sign-in: saves it, or replaces the one saved before. An empty string stops push to this
+  // sign-in. Signing out (or "log out of all devices") stops delivery to it as well.
+  router.post("/push-token", async (req, res) => {
+    const { devicePushToken } = pushTokenBodySchema.parse(req.body);
+    if (devicePushToken === "") {
+      await removeSessionDevices(req.session._id);
+      return void res.json({ registered: false });
+    }
+    await saveDeviceToken({ userId: req.user._id, token: devicePushToken, sessionId: req.session._id, replace: true });
+    res.json({ registered: true });
   });
 
   router.patch("/", async (req, res) => {
@@ -85,6 +98,7 @@ export function accountRoutes({ config, limiters }) {
 
   // "Log out of all devices", including this one.
   router.delete("/sessions", async (req, res) => {
+    await removeUserDevices(req.user._id); // no push to any of this account's phones any more
     await Session.deleteMany({ user: req.user._id });
     clearSessionCookie(res, config);
     res.status(204).end();

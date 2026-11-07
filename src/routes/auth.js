@@ -2,6 +2,7 @@ import { Router } from "express";
 import { dropTokens, findToken, sendPasswordChanged, sendPasswordReset, sendVerification } from "../lib/account-emails.js";
 import { applyComplianceRules } from "../lib/compliance.js";
 import { recordRegistrationNin } from "../lib/verification.js";
+import { removeSessionDevices, saveLoginToken } from "../lib/devices.js";
 import { Agent } from "../models/Agent.js";
 import { Business } from "../models/Business.js";
 import { Organisation } from "../models/Organisation.js";
@@ -34,21 +35,24 @@ export function authRoutes({ config, limiters }) {
     // A new token on every login, so a stolen old token is useless.
     const old = readSessionToken(req, config);
     if (typeof old === "string" && old) await Session.deleteOne({ tokenHash: hashToken(old) });
+    req.newSessionId = null;
 
     const DAY = 24 * 60 * 60 * 1000;
     const token = newToken();
     // The app gets a Bearer token (no cookie) whose session slides. Websites keep the httpOnly cookie.
     if (isAppClient(req)) {
       const expiresAt = new Date(Date.now() + Math.min(config.session.appTtlDays, config.session.appMaxDays) * DAY);
-      await Session.create({ user: userId, tokenHash: hashToken(token), client: "app", userAgent: String(req.get("user-agent") ?? "").slice(0, 200), expiresAt });
+      const session = await Session.create({ user: userId, tokenHash: hashToken(token), client: "app", userAgent: String(req.get("user-agent") ?? "").slice(0, 200), expiresAt });
+      req.newSessionId = session._id;
       return { token, tokenExpiresAt: expiresAt };
     }
-    await Session.create({
+    const session = await Session.create({
       user: userId,
       tokenHash: hashToken(token),
       userAgent: String(req.get("user-agent") ?? "").slice(0, 200),
       expiresAt: new Date(Date.now() + config.session.ttlDays * DAY),
     });
+    req.newSessionId = session._id;
     setSessionCookie(res, config, token);
     // Legacy testing switch (ALLOW_TOKEN_AUTH): hand the token to the page as well.
     return config.session.allowBearer ? { token } : {};
@@ -103,12 +107,13 @@ export function authRoutes({ config, limiters }) {
     await recordRegistrationNin({ config, business, user, nin });
 
     const extra = await startSession(req, res, user._id);
+    const pushTokenSaved = await saveLoginToken(user._id, req.newSessionId, body.devicePushToken);
     await sendVerification(user); // queues the "confirm your email" message, never blocks sign-up on the mail service
-    res.status(201).json({ user, business, insights: buildInsights(business), registration: registrationState(user, config), ...extra });
+    res.status(201).json({ user, business, insights: buildInsights(business), registration: registrationState(user, config), ...(body.devicePushToken?.trim() ? { pushTokenSaved } : {}), ...extra });
   });
 
   router.post("/login", limiters.login, async (req, res) => {
-    const { identifier, email, password } = loginSchema.parse(req.body);
+    const { identifier, email, password, devicePushToken } = loginSchema.parse(req.body);
     const given = (identifier ?? email).trim();
     const failure = () =>
       new ApiError(
@@ -159,8 +164,9 @@ export function authRoutes({ config, limiters }) {
     await user.save();
 
     const extra = await startSession(req, res, user._id);
+    const pushTokenSaved = await saveLoginToken(user._id, req.newSessionId, devicePushToken);
     const business = await Business.findOne({ owner: user._id });
-    res.json({ user, business, insights: business ? buildInsights(business) : null, registration: registrationState(user, config), ...extra });
+    res.json({ user, business, insights: business ? buildInsights(business) : null, registration: registrationState(user, config), ...(devicePushToken?.trim() ? { pushTokenSaved } : {}), ...extra });
   });
 
   // Always the same answer, whether or not the email belongs to an account, so this cannot be used to find out who is registered.
@@ -209,7 +215,12 @@ export function authRoutes({ config, limiters }) {
 
   router.post("/logout", async (req, res) => {
     const token = readSessionToken(req, config);
-    if (typeof token === "string" && token) await Session.deleteOne({ tokenHash: hashToken(token) });
+    if (typeof token === "string" && token) {
+      // Signing out stops push to the phone that signed in with this session.
+      const session = await Session.findOne({ tokenHash: hashToken(token) }).select("_id");
+      if (session) await removeSessionDevices(session._id);
+      await Session.deleteOne({ tokenHash: hashToken(token) });
+    }
     clearSessionCookie(res, config);
     res.status(204).end();
   });

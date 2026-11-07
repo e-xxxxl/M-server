@@ -2,20 +2,33 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import mongoose from "mongoose";
 import { Device } from "../models/Device.js";
+import { Session } from "../models/Session.js";
 import { User } from "../models/User.js";
+import { isExpoToken } from "./push-token.js";
 
 /**
- * Push notifications to the phone app through Firebase Cloud Messaging (FCM, the HTTP v1 API).
+ * Push notifications to the phone app. Two kinds of token are delivered, chosen by the shape of the token:
+ * - an Expo push token (`ExponentPushToken[...]`) goes through Expo's push service, which needs no key here (an optional
+ *   EXPO_ACCESS_TOKEN adds Expo's enhanced security);
+ * - a raw Firebase device token goes through Firebase Cloud Messaging (the HTTP v1 API) with the server's own key.
+ * Either way the app registers its token at sign-in (devicePushToken), with POST /api/account/push-token or with
+ * POST /api/devices, and the token is tied to that sign-in: signing out stops delivery to it.
  *
- * - The app gets its device token from Firebase and registers it with POST /api/devices. Firebase delivers to Android
- *   and, through Apple's push service, to iOS.
- * - The server signs in to Firebase with a SERVICE ACCOUNT key (a JSON file from the Firebase console). The key lives
+ * - For Firebase the server signs in with a SERVICE ACCOUNT key (a JSON file from the Firebase console). The key lives
  *   only on the server, is read once at start, is never logged, never returned and never stored in the database. The
  *   short lived access token made from it is kept in memory only.
  * - What is pushed is the same short headline an email carries: never a staff note or a profile detail.
  * - Sending never throws and never blocks the action that caused it. A token that Firebase says no longer exists is deleted.
- * - Without credentials push is simply off and everything else works.
+ * - Without a Firebase key only Expo tokens are delivered; everything else works.
+ * - Every alert uses the Android notification channel "alerts" (the app creates it) and carries data.link, the app screen to open.
  */
+
+/** The Android notification channel every alert uses. The app creates a channel with this id. */
+export const ALERT_CHANNEL = "alerts";
+/** The app screen every alert opens: the inbox. */
+export const APP_INBOX = "/notifications";
+const EXPO_URL = "https://exp.host/--/api/v2/push/send";
+const EXPO_BATCH = 100;
 
 const SCOPE = "https://www.googleapis.com/auth/firebase.messaging";
 const DEFAULT_TOKEN_URI = "https://oauth2.googleapis.com/token";
@@ -57,9 +70,8 @@ export function loadFirebaseCredentials(cfg, { log = console } = {}) {
   return { clientEmail: parsed.client_email, privateKey: parsed.private_key, projectId, tokenUri };
 }
 
-export function createPushSender(cfg, { fetchImpl = fetch, log = console, now = () => Date.now() } = {}) {
-  const credentials = cfg?.credentials ?? null;
-  const enabled = cfg?.enabled !== false && Boolean(credentials);
+function createFcmSender(cfg, { fetchImpl = fetch, log = console, now = () => Date.now() } = {}) {
+  const credentials = cfg.credentials;
   let cached = null; // { value, expiresAt }
 
   /** A short lived Google access token for this server, made from the service account. Null when Google refuses. */
@@ -99,7 +111,7 @@ export function createPushSender(cfg, { fetchImpl = fetch, log = console, now = 
       token: m.to,
       notification: { title: m.title, ...(m.body ? { body: m.body } : {}) },
       data,
-      android: { priority: "HIGH", notification: { sound: "default" } },
+      android: { priority: "HIGH", notification: { sound: "default", channel_id: ALERT_CHANNEL } },
       apns: { headers: { "apns-priority": "10" }, payload: { aps: { sound: "default" } } },
     };
     let res;
@@ -136,7 +148,6 @@ export function createPushSender(cfg, { fetchImpl = fetch, log = console, now = 
   }
 
   return {
-    enabled,
     /** Sends [{ to, title, body, data }]. Returns { sent, invalidTokens }. */
     async send(messages) {
       let sent = 0;
@@ -155,13 +166,78 @@ export function createPushSender(cfg, { fetchImpl = fetch, log = console, now = 
   };
 }
 
+function createExpoSender(cfg, { fetchImpl = fetch, log = console } = {}) {
+  return {
+    /** Sends [{ to, title, body, data }] to Expo's push service. Returns { sent, invalidTokens }. */
+    async send(messages) {
+      let sent = 0;
+      const invalidTokens = [];
+      for (let i = 0; i < messages.length; i += EXPO_BATCH) {
+        const chunk = messages.slice(i, i + EXPO_BATCH);
+        try {
+          const res = await fetchImpl(EXPO_URL, {
+            method: "POST",
+            headers: { Accept: "application/json", "Content-Type": "application/json", ...(cfg?.accessToken ? { Authorization: `Bearer ${cfg.accessToken}` } : {}) },
+            body: JSON.stringify(chunk.map((m) => ({ to: m.to, title: m.title, ...(m.body ? { body: m.body } : {}), data: m.data ?? {}, sound: "default", priority: "high", channelId: ALERT_CHANNEL }))),
+            signal: AbortSignal.timeout(TIMEOUT_MS),
+          });
+          if (!res.ok) {
+            log.error(`Push notifications were not sent: Expo answered ${res.status}`);
+            continue;
+          }
+          const json = await res.json().catch(() => null);
+          const tickets = Array.isArray(json?.data) ? json.data : [];
+          chunk.forEach((m, j) => {
+            const ticket = tickets[j];
+            if (ticket?.status === "ok") sent += 1;
+            else if (ticket?.details?.error === "DeviceNotRegistered") invalidTokens.push(m.to);
+          });
+        } catch (err) {
+          log.error("Push notifications were not sent:", err?.name ?? "error");
+        }
+      }
+      return { sent, invalidTokens };
+    },
+  };
+}
+
+/**
+ * The sender for the whole app: Expo tokens go to Expo, Firebase tokens go to Firebase. `cfg` is
+ * { enabled, credentials, expo: { accessToken } }; `null` means push is not set up (tests, and before the server starts).
+ */
+export function createPushSender(cfg, options = {}) {
+  if (!cfg) return { enabled: false, firebase: false, async send() { return { sent: 0, invalidTokens: [] }; } };
+  const log = options.log ?? console;
+  const expo = createExpoSender(cfg.expo, options);
+  const fcm = cfg.credentials ? createFcmSender({ credentials: cfg.credentials }, options) : null;
+  let warned = false;
+  return {
+    enabled: cfg.enabled !== false,
+    firebase: Boolean(fcm),
+    async send(messages) {
+      const viaExpo = messages.filter((m) => isExpoToken(m.to));
+      const viaFcm = messages.filter((m) => !isExpoToken(m.to));
+      const parts = [];
+      if (viaExpo.length > 0) parts.push(await expo.send(viaExpo));
+      if (viaFcm.length > 0) {
+        if (fcm) parts.push(await fcm.send(viaFcm));
+        else if (!warned) {
+          warned = true;
+          log.error("Push to a Firebase device token was skipped: the server has no Firebase service account key (FIREBASE_SERVICE_ACCOUNT_FILE).");
+        }
+      }
+      return { sent: parts.reduce((n, p) => n + p.sent, 0), invalidTokens: parts.flatMap((p) => p.invalidTokens) };
+    },
+  };
+}
+
 // One sender for the whole process. Tests put a fake one here.
 let current = createPushSender(null);
 
 /** Called once by the server: reads the Firebase key and starts the sender. */
 export function configurePush(config, options = {}) {
   const credentials = config.push.enabled === false ? null : loadFirebaseCredentials(config.push.firebase, options);
-  current = createPushSender({ enabled: config.push.enabled, credentials }, options);
+  current = createPushSender({ enabled: config.push.enabled, credentials, expo: config.push.expo }, options);
   return current;
 }
 export function setPushSender(sender) {
@@ -184,11 +260,19 @@ export async function deliverPush(userIds, { title, body = "", link = "", type =
     const ids = userIds.map(String);
     const wanting = await User.find({ _id: mongoose.trusted({ $in: ids }), pushNotifications: mongoose.trusted({ $ne: false }), active: mongoose.trusted({ $ne: false }) }).distinct("_id");
     if (wanting.length === 0) return 0;
-    const devices = await Device.find({ user: mongoose.trusted({ $in: wanting }) }).select("token").lean();
+    const all = await Device.find({ user: mongoose.trusted({ $in: wanting }) }).select("token session").lean();
+    // A token tied to a sign-in is only used while that sign-in is alive. Tokens of ended sign-ins are forgotten here too,
+    // however the sign-in ended (sign out, password change, expiry, an administrator).
+    const linked = [...new Set(all.filter((d) => d.session).map((d) => String(d.session)))];
+    const alive = new Set(linked.length ? (await Session.find({ _id: mongoose.trusted({ $in: linked }), expiresAt: mongoose.trusted({ $gt: new Date() }) }).select("_id").lean()).map((s) => String(s._id)) : []);
+    const gone = all.filter((d) => d.session && !alive.has(String(d.session)));
+    if (gone.length > 0) await Device.deleteMany({ _id: mongoose.trusted({ $in: gone.map((d) => d._id) }) });
+    const devices = all.filter((d) => !d.session || alive.has(String(d.session)));
     if (devices.length === 0) return 0;
-    const result = await push.send(
-      devices.map((d) => ({ to: d.token, title: title.slice(0, 120), body: body.slice(0, 300), data: { link, type, ...(notificationId ? { notificationId } : {}) } })),
-    );
+    // data.link is the app screen to open (every alert is also a row in the inbox, GET /api/notifications). webLink is the
+    // matching page on the website, for an app that wants to open something more specific.
+    const data = { link: APP_INBOX, ...(link ? { webLink: link } : {}), type, ...(notificationId ? { notificationId } : {}) };
+    const result = await push.send(devices.map((d) => ({ to: d.token, title: title.slice(0, 120), body: body.slice(0, 300), data })));
     if (result.invalidTokens.length > 0) await Device.deleteMany({ token: mongoose.trusted({ $in: result.invalidTokens }) });
     return result.sent;
   } catch (err) {

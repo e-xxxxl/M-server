@@ -71,11 +71,13 @@ export function loadConfig(env = process.env) {
       // How long one payment keeps the registration valid.
       periodDays: Number(env.REGISTRATION_PERIOD_DAYS ?? 365),
     },
-    // Push notifications to the phone app through Firebase Cloud Messaging. They need a Firebase service account key
-    // (a JSON file from the Firebase console). Prefer the FILE: keep it outside the website folder with permissions 600.
-    // Without one, push is off and everything else works. PUSH_ENABLED=false switches push off on purpose.
+    // Push notifications to the phone app. Expo push tokens (ExponentPushToken[...]) are delivered through Expo's push service
+    // and need nothing here (EXPO_ACCESS_TOKEN is optional). Raw Firebase device tokens are delivered through Firebase Cloud
+    // Messaging and need a Firebase service account key (a JSON file from the Firebase console). Prefer the FILE: keep it
+    // outside the website folder with permissions 600. PUSH_ENABLED=false switches push off on purpose.
     push: {
       enabled: env.PUSH_ENABLED !== "false",
+      expo: { accessToken: env.EXPO_ACCESS_TOKEN ?? "" },
       firebase: {
         serviceAccountFile: env.FIREBASE_SERVICE_ACCOUNT_FILE ?? "",
         serviceAccountBase64: env.FIREBASE_SERVICE_ACCOUNT_BASE64 ?? "",

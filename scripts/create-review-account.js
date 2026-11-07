@@ -5,6 +5,8 @@
 //     npm run review-account -- --email reviewer@example.com --phone 08000000002 --years 2
 //     npm run review-account -- --reset-password        (new password for the existing account, more paid time)
 //     npm run review-account -- --verified              (also mark the sample business Verified, with an ID)
+//     npm run review-account -- --check                 (changes NOTHING: checks the account is ready for a reviewer)
+//     npm run review-account -- --check --test-password (the same, and asks you to type the password to prove it works)
 //
 // The password is made by the script, printed ONCE in this terminal and stored only as a hash. Copy it into the store's
 // "App access" instructions from here. Do not paste it into chat or email.
@@ -15,7 +17,8 @@
 import "dotenv/config";
 import mongoose from "mongoose";
 import { loadConfig } from "../src/config.js";
-import { createReviewAccount } from "../src/lib/review-account.js";
+import readline from "node:readline";
+import { createReviewAccount, inspectReviewAccount } from "../src/lib/review-account.js";
 import { emailSchema, phoneSchema } from "../src/schemas.js";
 
 const args = process.argv.slice(2);
@@ -44,6 +47,55 @@ try {
 } catch (err) {
   console.error("Could not connect to MongoDB:", err?.name);
   process.exit(1);
+}
+
+/** Reads a line without showing it as you type. */
+function askHidden(question) {
+  return new Promise((resolve) => {
+    process.stdout.write(question);
+    if (!process.stdin.isTTY) {
+      const rl = readline.createInterface({ input: process.stdin });
+      rl.once("line", (line) => {
+        rl.close();
+        resolve(line);
+      });
+      return;
+    }
+    let value = "";
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.setEncoding("utf8");
+    const onData = (chunk) => {
+      for (const ch of chunk) {
+        if (ch === "\r" || ch === "\n") {
+          process.stdin.setRawMode(false);
+          process.stdin.pause();
+          process.stdin.removeListener("data", onData);
+          process.stdout.write("\n");
+          return resolve(value);
+        }
+        if (ch === "\u0003") process.exit(130); // Ctrl+C
+        if (ch === "\u007f" || ch === "\b") value = value.slice(0, -1);
+        else value += ch;
+      }
+    };
+    process.stdin.on("data", onData);
+  });
+}
+
+if (has("check")) {
+  try {
+    const password = has("test-password") ? await askHidden("Type the review password to test it (not shown): ") : "";
+    const results = await inspectReviewAccount(config, { email: email.data, password });
+    for (const r of results) console.log(`  ${r.ok === true ? "OK      " : r.ok === false ? "PROBLEM " : "INFO    "} ${r.label}${r.detail ? ": " + r.detail : ""}`);
+    const problems = results.filter((r) => r.ok === false).length;
+    console.log("");
+    console.log(problems === 0 ? "Everything the reviewer needs is in place." : `${problems} problem(s) above need fixing before you submit.`);
+    process.exitCode = problems === 0 ? 0 : 1;
+  } finally {
+    await mongoose.disconnect();
+  }
+  process.exit(process.exitCode ?? 0);
 }
 
 try {
