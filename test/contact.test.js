@@ -33,7 +33,7 @@ describe("the contact form", () => {
     assert.equal(await ContactMessage.countDocuments({ subject: "A question" }), 1);
     await new Promise((r) => setTimeout(r, 50));
     assert.equal(sent.length, 1);
-    assert.equal(sent[0].to, "contact@nmrep.org");
+    assert.equal(sent[0].to, "admin@nmrep.org");
     assert.match(sent[0].text, /How do I renew/);
   });
 

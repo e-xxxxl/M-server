@@ -263,3 +263,19 @@ describe("the older device endpoints", () => {
     assert.equal(await Device.exists({ token: t }), null, "signing out stops delivery to it");
   });
 });
+
+describe("deleting the account", () => {
+  it("needs the password, then removes the account, its sign-ins and its push tokens", async () => {
+    const o = await owner();
+    const t = tok();
+    await call("POST", "/api/account/push-token", { cookie: o.cookie, body: { devicePushToken: t } });
+    const wrong = await call("DELETE", "/api/account", { cookie: o.cookie, body: { password: "Wrong-pass-1" } });
+    assert.equal(wrong.status, 422);
+    assert.ok(wrong.json.error.fields.password);
+    assert.ok(await Device.exists({ token: t }), "nothing deleted on a wrong password");
+    assert.equal((await call("DELETE", "/api/account", { cookie: o.cookie, body: { password: o.password } })).status, 204);
+    assert.equal(await Device.exists({ token: t }), null);
+    assert.equal(await Session.countDocuments({ user: o.user.id }), 0);
+    assert.equal((await login(o)).status, 401, "the account is gone");
+  });
+});

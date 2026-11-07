@@ -732,7 +732,7 @@ What to know:
 
 ### 10.9 Push notifications, "Stop these emails" links and reminders
 
-- **Push** has two routes, chosen by the phone's token. **Expo push tokens** (`ExponentPushToken[...]`) work out of the box (set `EXPO_ACCESS_TOKEN` only if you turned on enhanced push security in your Expo account). **Raw Firebase device tokens** go through Firebase Cloud Messaging and are **skipped until you give the server a Firebase service account key**:
+- **Push for the NMREP app needs nothing on the server.** The app only creates **Expo push tokens** (`ExponentPushToken[...]`), and the server delivers those through Expo. Leave `EXPO_ACCESS_TOKEN` empty unless enhanced push security is turned on in the Expo account (it is off unless someone enabled it). **Do not set `FIREBASE_SERVICE_ACCOUNT_FILE`, `FIREBASE_SERVICE_ACCOUNT_BASE64` or `FIREBASE_PROJECT_ID`.** The Firebase private key goes into **Expo** (Android credentials, the FCM V1 service account key slot), never onto this server. The rest of this bullet applies only if a future app sends raw Firebase device tokens, which today's app does not: those go through Firebase Cloud Messaging and are skipped until the server has a Firebase service account key:
   1. In the Firebase console (the project the phone app uses): Project settings, Service accounts, **Generate new private key**. A JSON file downloads. **It is a secret**: treat it like a password, never commit it, email it or paste it in a message.
   2. Upload it to the server outside the website folder, for example `/opt/nmrep/shared/firebase-service-account.json`, owned by the service user, with `chmod 600`.
   3. Add `FIREBASE_SERVICE_ACCOUNT_FILE=/opt/nmrep/shared/firebase-service-account.json` to `/opt/nmrep/shared/.env` and restart. If the key cannot be used the log says "Push notifications are off"; the key itself is never printed.
@@ -867,3 +867,11 @@ It creates a normal business owner account (`playstore.review@nmrep.org` by defa
 - `--years 1` to `10` changes how long it stays paid. `--email` and `--phone` change the sign-in details. `--verified` also marks the sample business Verified.
 - `--check` changes nothing and tells you, line by line, whether the account is ready for a reviewer: exists, active, not locked, email confirmed, fee paid with enough time left (at least 60 days), one valid business, not suspended, phone not shared. It also shows (as INFO) whether document storage, automated verification and email are switched on on this server. Add `--test-password` and type the password when asked (it is not shown) to prove the password you saved is the right one.
 - It is a real record in your registry. When the review is finished, a super admin can remove it in the admin portal (Businesses, then Permanent delete).
+
+### 10.11 Alerts to the NMREP staff inbox
+
+When email is on, the server emails **admin@nmrep.org** about: a new registration, a registration fee paid, a business that needs a reviewer (a NIN or CAC record in a different name), and every message from the website contact form (which is also kept under Enquiries in the admin portal). Business owners never see these emails, and they never contain a NIN, a password, or the owner's phone or email.
+
+- `STAFF_ALERT_EMAIL` in `/opt/nmrep/shared/.env` changes the address, or lists several separated by commas. `STAFF_ALERT_EMAIL=` (empty) switches the alerts off.
+- `CONTACT_EMAIL` is only needed if the contact form should go to a different inbox from the alerts.
+- The sending address (`EMAIL_FROM`) and `RESEND_API_KEY` must already be set, otherwise no email goes out at all. admin@nmrep.org must be a real mailbox that can receive mail.

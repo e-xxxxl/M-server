@@ -119,7 +119,10 @@ export function loadConfig(env = process.env) {
       maxTotalBytes: Number(env.DOCUMENT_MAX_TOTAL_MB ?? 40) * 1024 * 1024,
     },
     // The NMREP inbox that receives the website contact form. Messages are also kept in the admin portal.
-    contact: { inbox: env.CONTACT_EMAIL ?? "contact@nmrep.org" },
+    // Alerts to the NMREP staff inbox: a new registration, a fee paid, a check that needs a reviewer. A comma separated list;
+    // STAFF_ALERT_EMAIL= (empty) switches them off. The website contact form goes to the same inbox unless CONTACT_EMAIL is set.
+    staffAlerts: { to: String(env.STAFF_ALERT_EMAIL ?? "admin@nmrep.org").split(",").map((a) => a.trim()).filter(Boolean) },
+    contact: { inbox: env.CONTACT_EMAIL ?? String(env.STAFF_ALERT_EMAIL ?? "admin@nmrep.org").split(",")[0].trim() },
     // Email through Resend. Without RESEND_API_KEY and EMAIL_FROM, email is switched off and everything else still works.
     email: {
       apiKey: env.RESEND_API_KEY ?? "",

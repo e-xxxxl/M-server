@@ -10,6 +10,8 @@ import { alatpay, bankNameFor } from "./alatpay.js";
 import { isConfigured } from "./gateways.js";
 import { paystack } from "./paystack.js";
 import { restoreAfterRenewal } from "./subscription.js";
+import { alertPaymentReceived } from "./staff-alerts.js";
+import { Business } from "../models/Business.js";
 
 /**
  * The yearly registration fee. Every business owner pays it to complete registration, and again each year. Money is
@@ -161,6 +163,7 @@ export async function settlePayment(config, reference, { userId = null, now = ne
         body: `Thank you. Your registration for ${payment.years ?? 1} year${(payment.years ?? 1) === 1 ? "" : "s"} is paid until ${user.registrationPaidUntil.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Lagos" })}.`,
         link: "/dashboard/",
       });
+      alertPaymentReceived(config, { business: await Business.findOne({ owner: user._id }).select("businessName"), user, payment: claimed });
       sendPaymentReceipt(user, { amount: payment.amountKobo / 100, years: payment.years ?? 1, reference: payment.reference, paidUntil: user.registrationPaidUntil, provider: payment.provider });
     }
     return { outcome: "success", payment: claimed };

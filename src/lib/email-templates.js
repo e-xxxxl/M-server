@@ -111,6 +111,19 @@ export function updateEmail(user, title, url, { body = "", unsubscribeUrl = "" }
   };
 }
 
+/** An alert for the NMREP staff inbox: a few plain lines and a link into the admin portal. */
+export function staffAlertEmail(title, lines, url) {
+  return {
+    subject: title.slice(0, 150),
+    ...layout({
+      greeting: title,
+      paragraphs: lines,
+      button: { label: "Open in the admin portal", url },
+      footer: "This alert goes to the NMREP staff inbox. Owners never see it.",
+    }),
+  };
+}
+
 /** The receipt for the yearly registration fee. */
 export function paymentReceiptEmail(user, { amount, reference, paidUntil, url, provider = "", years = 1 }) {
   const money = new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(amount);

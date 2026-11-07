@@ -5,6 +5,7 @@ import { VerificationCheck, checkTypes } from "../models/VerificationCheck.js";
 import { ApiError } from "../middleware/errors.js";
 import { matchesAny, phoneTail } from "./name-match.js";
 import { issueNmrepId } from "./ids.js";
+import { alertNeedsReviewer } from "./staff-alerts.js";
 import { prembly } from "./prembly.js";
 
 /**
@@ -190,6 +191,16 @@ export async function runCheck({ config, business, user, input }) {
     reference: result.reference ?? "",
     consentAt: checkInfo[type].needsNumber ? new Date() : null,
   });
+
+  // A record was found but a person has to decide: tell the staff inbox.
+  if (check.status === "Needs review") {
+    alertNeedsReviewer(config, {
+      business,
+      user,
+      type,
+      reason: type === "nin" ? "a record was found in a name that does not match the account or the owner name." : "the registered name or status does not match the business.",
+    });
+  }
 
   // A NIN that the provider confirms and whose name matches verifies the business at once, and issues its NMREP ID. Staff can
   // still change the status later. A business staff have Rejected or Suspended is never changed by a check.

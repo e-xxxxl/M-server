@@ -3,6 +3,7 @@ import { dropTokens, findToken, sendPasswordChanged, sendPasswordReset, sendVeri
 import { applyComplianceRules } from "../lib/compliance.js";
 import { recordRegistrationNin } from "../lib/verification.js";
 import { removeSessionDevices, saveLoginToken } from "../lib/devices.js";
+import { alertNewRegistration } from "../lib/staff-alerts.js";
 import { Agent } from "../models/Agent.js";
 import { Business } from "../models/Business.js";
 import { Organisation } from "../models/Organisation.js";
@@ -105,6 +106,7 @@ export function authRoutes({ config, limiters }) {
 
     // The NIN is kept as its last four digits and a fingerprint, and checked when automated checks are on. Never blocks sign-up.
     await recordRegistrationNin({ config, business, user, nin });
+    alertNewRegistration(config, { business, user, referralCode: agent?.code ?? "" });
 
     const extra = await startSession(req, res, user._id);
     const pushTokenSaved = await saveLoginToken(user._id, req.newSessionId, body.devicePushToken);
