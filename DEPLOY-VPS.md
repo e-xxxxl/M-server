@@ -732,7 +732,13 @@ What to know:
 
 ### 10.9 Push notifications, "Stop these emails" links and reminders
 
-- **Push** goes through Expo and needs nothing from you: it is on by default and sends nothing until the phone app registers phones. `PUSH_ENABLED=false` switches it off. `EXPO_ACCESS_TOKEN` is only needed if you turn on "enhanced push security" in your Expo account.
+- **Push** goes through Firebase Cloud Messaging. It is **off until you give the server a Firebase service account key**:
+  1. In the Firebase console (the project the phone app uses): Project settings, Service accounts, **Generate new private key**. A JSON file downloads. **It is a secret**: treat it like a password, never commit it, email it or paste it in a message.
+  2. Upload it to the server outside the website folder, for example `/opt/nmrep/shared/firebase-service-account.json`, owned by the service user, with `chmod 600`.
+  3. Add `FIREBASE_SERVICE_ACCOUNT_FILE=/opt/nmrep/shared/firebase-service-account.json` to `/opt/nmrep/shared/.env` and restart. If the key cannot be used the log says "Push notifications are off"; the key itself is never printed.
+  4. In the Google Cloud console for the same project, check that the **Firebase Cloud Messaging API** is enabled (it normally is).
+  5. Try it: `npm run push-check -- <the phone's Firebase device token>` sends one test notification. The phone app can also call `POST /api/devices/test` to send one to itself.
+  The app developer adds the app to the same Firebase project (`google-services.json` for Android; `GoogleService-Info.plist` for iOS, with an Apple APNs authentication key uploaded in the Firebase console). `PUSH_ENABLED=false` switches push off on purpose.
 - **UNSUBSCRIBE_SECRET** signs the "Stop these emails" link in notification emails. Set it once to a long random value and never change it, otherwise old links in sent emails stop working. Create one with `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"` and add it to `/opt/nmrep/shared/.env`. The server warns on start while it is missing.
 - **Reminders** (a programme closing in 3 days and 1 day, a training session tomorrow) run inside the API every hour and never send the same reminder twice. `REMINDERS_ENABLED=false` switches them off.
 - Large messages (for example a message to every owner) are emailed in batches of 100 with a short pause, so Resend's rate limit is not hit. A big message can take a few minutes to finish.
@@ -846,3 +852,17 @@ What it does **not** give you, so you can decide later:
 - A second server. If this one fails, the site is down until it is restored from a backup.
 
 **Never:** open port 27017, use the `nmrep_admin` login in the app, put the `.env` file or any key in a chat or a zip, or run the API as root.
+
+### 10.10 The account for Google Play (or App Store) reviewers
+
+Store reviewers need an account they can sign in with. On the server, in the backend folder:
+
+```bash
+npm run review-account
+```
+
+It creates a normal business owner account (`playstore.review@nmrep.org` by default, with a sample business called "Google Play Review Business"), with its email confirmed and the registration fee **already paid for 2 years**, so the reviewer is never sent to the payment page. The password is made by the script and **printed once in your terminal**; it is stored only as a hash. Copy it straight into the store's "App access" instructions. Do not paste it into chat or email.
+
+- `--reset-password` gives the existing account a new password and more paid time (use it before resubmitting, or if you lose the password).
+- `--years 1` to `10` changes how long it stays paid. `--email` and `--phone` change the sign-in details. `--verified` also marks the sample business Verified.
+- It is a real record in your registry. When the review is finished, a super admin can remove it in the admin portal (Businesses, then Permanent delete).

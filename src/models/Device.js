@@ -3,14 +3,14 @@ import mongoose from "mongoose";
 export const devicePlatforms = ["ios", "android"];
 
 /**
- * A phone that can receive push notifications for an account. The token comes from the app (an Expo push token) and is
- * the only thing kept besides the platform. A token belongs to one account at a time: when someone signs in on the same
+ * A phone that can receive push notifications for an account. The token comes from the app (a Firebase Cloud Messaging
+ * device token) and is the only thing kept besides the platform. A token belongs to one account at a time: when someone signs in on the same
  * phone, the token moves to them.
  */
 const deviceSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    token: { type: String, required: true, unique: true, maxlength: 200 },
+    token: { type: String, required: true, unique: true, maxlength: 4096 },
     platform: { type: String, enum: devicePlatforms, required: true },
     lastSeenAt: { type: Date, default: Date.now },
   },

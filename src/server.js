@@ -11,7 +11,7 @@ import { configureDocumentStorage } from "./lib/document-storage.js";
 import { configurePrembly } from "./lib/prembly.js";
 import { configureAlatpay } from "./lib/alatpay.js";
 import { configurePaystack } from "./lib/paystack.js";
-import { configurePush } from "./lib/push.js";
+import { configurePush, push } from "./lib/push.js";
 import { seedLgas } from "./lib/lgas.js";
 import { applyRenames } from "./lib/renames.js";
 import { loadSettings } from "./lib/settings.js";
@@ -60,6 +60,9 @@ configurePrembly(config);
 configurePaystack(config);
 configureAlatpay(config);
 configurePush(config);
+if (config.push.enabled && !push.enabled) {
+  console.warn("Push notifications are off: no usable Firebase service account (set FIREBASE_SERVICE_ACCOUNT_FILE to the key file). Owners still get in-app notifications and email.");
+}
 if (config.payments.enabled) {
   const paystackTest = config.payments.gateway === "paystack" && config.payments.secretKey.startsWith("sk_test_");
   console.log(`Registration fee is ON: N${config.payments.registrationFeeNaira} a year through ${config.payments.gateway === "alatpay" ? "ALATPay (bank transfer)" : "Paystack"}.${paystackTest ? " (test key)" : ""}`);

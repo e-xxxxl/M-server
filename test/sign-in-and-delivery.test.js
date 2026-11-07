@@ -44,7 +44,8 @@ async function owner(account = {}, business = {}) {
   assert.equal(res.status, 201, JSON.stringify(res.json));
   return { cookie: res.cookie, email: body.account.email, phone: body.account.phone, password: body.account.password, userId: res.json.user.id, businessId: res.json.business.id };
 }
-const token = (i) => `ExponentPushToken[abcdefghijklmnopqrst${String(i).padStart(4, "0")}]`;
+// A Firebase device token looks like this: a long run of letters, digits, colons, dashes and underscores.
+const token = (i) => `dQw4w9WgXcQ:APA91bFakeTokenForTests_${String(i).padStart(4, "0")}-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-abcdefghijklmnop`;
 const register = (o, t, platform = "android") => call("POST", "/api/devices", { cookie: o.cookie, body: { token: t, platform } });
 
 describe("signing in with a phone number", () => {
@@ -102,10 +103,13 @@ describe("signing in with a phone number", () => {
 });
 
 describe("phones for push notifications", () => {
-  it("registers an Expo token, refreshes it, moves it to whoever signs in on that phone, and removes it", async () => {
+  it("registers a Firebase token, refreshes it, moves it to whoever signs in on that phone, and removes it", async () => {
     const a = await owner();
     const b = await owner();
     assert.equal((await register(a, "not-a-token")).status, 422);
+    const expo = await register(a, "ExponentPushToken[abcdefghijklmnopqrst0001]");
+    assert.equal(expo.status, 422, "an Expo token is not a Firebase token");
+    assert.match(expo.json.error.fields.token, /Firebase/);
     assert.equal((await call("POST", "/api/devices", { cookie: a.cookie, body: { token: token(1), platform: "windows" } })).status, 422);
     assert.equal((await call("POST", "/api/devices", { body: { token: token(1), platform: "ios" } })).status, 401);
 
@@ -124,6 +128,29 @@ describe("phones for push notifications", () => {
     assert.equal(await Device.countDocuments({ token: token(1) }), 1, "an account cannot remove another's phone");
     assert.equal((await call("DELETE", "/api/devices", { cookie: b.cookie, body: { token: token(1) } })).status, 204);
     assert.equal(await Device.countDocuments({ token: token(1) }), 0);
+  });
+
+  it("sends a test notification to the asker's own phones only", async () => {
+    const a = await owner();
+    const b = await owner();
+    await register(a, token(60));
+    await register(b, token(61));
+    pushes.batches = [];
+    const res = await call("POST", "/api/devices/test", { cookie: a.cookie });
+    assert.equal(res.status, 200, JSON.stringify(res.json));
+    assert.equal(res.json.devices, 1);
+    assert.equal(res.json.pushAvailable, true);
+    assert.deepEqual(allPushes().map((m) => m.to), [token(60)], "never to anyone else");
+    assert.equal(allPushes()[0].data.type, "test");
+    assert.equal((await call("POST", "/api/devices/test")).status, 401);
+
+    // Switched off by the owner: nothing is sent, and the answer says why.
+    await call("PATCH", "/api/account/notification-settings", { cookie: a.cookie, body: { push: false } });
+    pushes.batches = [];
+    const off = await call("POST", "/api/devices/test", { cookie: a.cookie });
+    assert.equal(off.json.switchedOnForAccount, false);
+    assert.equal(off.json.sent, 0);
+    assert.equal(allPushes().length, 0);
   });
 
   it("keeps the ten most recent phones of an account", async () => {

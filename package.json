@@ -11,6 +11,8 @@
   "scripts": {
     "document-key": "node scripts/create-document-key.js",
     "prembly-check": "node scripts/prembly-check.js",
+    "push-check": "node scripts/push-check.js",
+    "review-account": "node scripts/create-review-account.js",
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "dev:memory": "node scripts/dev-memory.js",

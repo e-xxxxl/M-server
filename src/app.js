@@ -89,7 +89,7 @@ export function createApp(config, { log = true } = {}) {
   app.use("/api/auth", authRoutes({ config, limiters }));
   app.use("/api/account", accountRoutes({ config, limiters }));
   app.use("/api/payments", paymentRoutes({ config }));
-  app.use("/api/devices", deviceRoutes({ config }));
+  app.use("/api/devices", deviceRoutes({ config, limiter: limiters.reset }));
   app.use("/api/business", businessRoutes({ config }));
   app.use("/api/dashboard", dashboardRoutes({ config }));
   app.use("/api/verification", verificationRoutes({ config }));
