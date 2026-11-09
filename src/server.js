@@ -14,6 +14,7 @@ import { configurePaystack } from "./lib/paystack.js";
 import { configurePush, push } from "./lib/push.js";
 import { seedLgas } from "./lib/lgas.js";
 import { applyRenames } from "./lib/renames.js";
+import { isConfigured } from "./lib/gateways.js";
 import { loadSettings } from "./lib/settings.js";
 import { backfillPhoneKeys } from "./lib/phone.js";
 import { startReminderScheduler } from "./lib/reminders.js";
@@ -66,8 +67,9 @@ if (config.payments.enabled) {
   const paystackTest = config.payments.gateway === "paystack" && config.payments.secretKey.startsWith("sk_test_");
   console.log(`Registration fee is ON: N${config.payments.registrationFeeNaira} a year through ${config.payments.gateway === "alatpay" ? "ALATPay (bank transfer)" : "Paystack"}.${paystackTest ? " (test key)" : ""}`);
   if (config.isProd && paystackTest) console.warn("WARNING: a Paystack TEST key is set in production. Real payments will not work.");
-} else if (config.isProd) {
-  console.warn("WARNING: the registration fee is OFF (no payment gateway is set up: set ALATPAY_SECRET_KEY and ALATPAY_BUSINESS_ID, or PAYSTACK_SECRET_KEY). Owners can use the platform without paying.");
+}
+if (config.isProd && !isConfigured(config, config.payments.gateway)) {
+  console.warn("WARNING: the registration fee is required but no payment gateway is set up (set ALATPAY_SECRET_KEY and ALATPAY_BUSINESS_ID, or PAYSTACK_SECRET_KEY). Owners cannot pay, so they are held at the payment page until a gateway is set up.");
 }
 if (!config.notifications.unsubscribeSecret) {
   console.warn("UNSUBSCRIBE_SECRET is not set: the Stop these emails links stop working whenever the server restarts. Set a long random value.");

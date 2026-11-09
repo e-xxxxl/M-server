@@ -137,4 +137,37 @@ describe("system settings", () => {
     assert.equal(noKey.payments.enabled, false);
   });
 
+
+  describe('on the live server the fee cannot be switched off', () => {
+    const prod = (env = {}) => loadConfig({ NODE_ENV: 'production', MONGODB_URI: 'x', ...env });
+
+    it('stays on with no gateway keys at all', () => {
+      const none = prod();
+      applyToConfig(none, {});
+      assert.equal(none.payments.enabled, true);
+    });
+
+    it('stays on when the fee was paused in Settings', () => {
+      const paused = prod({ PAYSTACK_SECRET_KEY: SECRET });
+      applyToConfig(paused, { registrationFeeActive: false });
+      assert.equal(paused.payments.enabled, true);
+    });
+
+    it('uses a gateway that is set up when the chosen one is not', () => {
+      const cfg = prod({ PAYSTACK_SECRET_KEY: SECRET });
+      applyToConfig(cfg, { paymentGateway: 'alatpay' });
+      assert.equal(cfg.payments.gateway, 'paystack');
+      assert.equal(cfg.payments.enabled, true);
+    });
+
+    it('is shown to the super admin as locked on, and an owner with no payment is held (402)', async () => {
+      const cfg = prod({ PAYSTACK_SECRET_KEY: SECRET });
+      applyToConfig(cfg, { registrationFeeActive: false });
+      const { registrationState } = await import('../src/lib/payments.js');
+      const state = registrationState({ registrationPaidUntil: null }, cfg);
+      assert.equal(state.required, true);
+      assert.equal(state.paid, false);
+    });
+  });
+
 });

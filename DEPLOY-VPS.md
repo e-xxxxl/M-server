@@ -727,7 +727,7 @@ What to know:
 - With a **test** key the server prints a warning on start: real payments do not work until the live key is set. Use only Paystack's test cards.
 - Nothing about cards ever reaches the NMREP server or the website: the payer pays on Paystack's own page.
 - Remove the key (or leave it unset) to switch the fee off again; nobody is blocked then.
-- **The super admin can also change the fee from the admin portal** (Settings): which gateway is in use (ALATPay or Paystack), the amount, how many days one payment lasts, and a switch to pause the fee without removing the keys. A change applies at once, survives a restart and is written to the Activity log. The values in `.env` are the starting point; Settings can put them back. The Paystack key itself is never shown or changed there.
+- **The super admin can also change the fee from the admin portal** (Settings): which gateway is in use (ALATPay or Paystack), the amount, how many days one payment lasts, and (outside production only) a switch to pause the fee. On the live server the fee is always required: it cannot be paused, and if no gateway has keys owners are held at the payment page rather than let in free. A change applies at once, survives a restart and is written to the Activity log. The values in `.env` are the starting point; Settings can put them back. The Paystack key itself is never shown or changed there.
 - Reminders can be switched off and on from the same Settings page.
 
 ### 10.9 Push notifications, "Stop these emails" links and reminders

@@ -34,8 +34,14 @@ export function applyToConfig(config, stored = {}) {
   config.payments.periodDays = pick("registrationPeriodDays");
   // The gateway in use: the choice (the super admin's, else the server's own), or the first configured one.
   config.payments.gateway = pickGateway(config, pick("paymentGateway"));
-  // The fee needs the gateway in use to be configured AND not to be paused. Pausing never needs a key to be removed.
-  config.payments.enabled = isConfigured(config, config.payments.gateway) && pick("registrationFeeActive");
+  // On the live server the fee is ALWAYS required. It cannot be paused, and a gateway that is not set up does not turn it
+  // off: if the chosen gateway has no keys, a gateway that has them is used, and if none has, owners are held at the
+  // payment page (payments_unavailable) instead of being let in free. Elsewhere (development, tests) it needs a gateway
+  // that is set up and a fee that is not paused.
+  if (config.isProd && !isConfigured(config, config.payments.gateway)) {
+    config.payments.gateway = gatewayNames.find((name) => isConfigured(config, name)) ?? config.payments.gateway;
+  }
+  config.payments.enabled = config.isProd || (isConfigured(config, config.payments.gateway) && pick("registrationFeeActive"));
   config.reminders.enabled = pick("remindersEnabled");
 }
 
@@ -55,7 +61,9 @@ export async function currentSettings(config) {
     registrationFee: {
       amountNaira: config.payments.registrationFeeNaira,
       periodDays: config.payments.periodDays,
-      active: changed("registrationFeeActive") ? doc.registrationFeeActive : true,
+      active: config.isProd ? true : changed("registrationFeeActive") ? doc.registrationFeeActive : true,
+      // True on the live server: the fee is always required and cannot be paused from Settings.
+      locked: Boolean(config.isProd),
       // Which gateway is in use, whether that was chosen here, and which are set up on the server. No key ever leaves it.
       gateway: config.payments.gateway,
       gatewayChanged: changed("paymentGateway"),

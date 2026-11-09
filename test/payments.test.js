@@ -63,6 +63,23 @@ const initialize = async (o) => (await call("POST", "/api/payments/registration/
 const verify = (o, reference) => call("POST", "/api/payments/registration/verify", { cookie: o.cookie, body: { reference } });
 
 describe("the registration fee gate", () => {
+  it("a referral code does not waive the fee: the owner is still held until they pay", async () => {
+    const made = await call("POST", "/api/admin/agents", { cookie: admin, body: { fullName: "Chidi Okafor", phone: "08012345678" } });
+    assert.equal(made.status, 201, JSON.stringify(made.json));
+    const body = registrationBody();
+    body.referralCode = made.json.agent.code;
+    const res = await call("POST", "/api/auth/register", { body });
+    assert.equal(res.status, 201, JSON.stringify(res.json));
+    assert.equal(res.json.registration.required, true);
+    assert.equal(res.json.registration.paid, false);
+    const user = await User.findById(res.json.user.id);
+    assert.equal(user.registrationPaidUntil, null);
+    for (const path of ["/api/dashboard", "/api/business", "/api/opportunities", "/api/verification"]) {
+      const blocked = await call("GET", path, { cookie: res.cookie, origin: null });
+      assert.equal(blocked.status, 402, path);
+    }
+  });
+
   it("is shown in the reference data and in every sign-up and sign-in answer, and holds an unpaid owner back", async () => {
     const reference = await (await fetch(`${ctx.base}/api/reference`)).json();
     assert.deepEqual(reference.registrationFee, { required: true, amount: 1000, currency: "NGN", gateway: "paystack" });
