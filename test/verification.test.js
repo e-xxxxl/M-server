@@ -144,7 +144,7 @@ describe("Prembly test mode (sandbox)", () => {
 });
 
 describe("running a check", () => {
-  it("lists the two checks (NIN required, CAC only for registered businesses) and says why CAC cannot be run yet", async () => {
+  it("lists the two checks (NIN required, CAC only for registered businesses) and lets the CAC number be typed", async () => {
     const o = await owner();
     const res = await call("GET", "/api/verification", { cookie: o.cookie });
     assert.equal(res.status, 200);
@@ -155,8 +155,9 @@ describe("running a check", () => {
     assert.equal(by.nin.needsNumber, true);
     assert.equal(by.nin.required, true);
     assert.equal(by.cac.required, false);
-    assert.equal(by.cac.applicable, false);
-    assert.match(by.cac.reason, /CAC registration number/);
+    assert.equal(by.cac.applicable, true, "the number can be typed, so it does not have to be on the profile first");
+    assert.equal(by.cac.acceptsNumber, true);
+    assert.equal(by.cac.numberOnFile, "");
     assert.deepEqual(res.json.nin, { provided: true, masked: "*******8901" });
     assert.equal(by.nin.result, null);
     assert.equal(calls.length, 0, "listing never calls the provider");
@@ -226,7 +227,7 @@ describe("running a check", () => {
     assert.equal(asNumber.status, 422);
     assert.equal((await run(o, { type: "passport", number: NIN })).status, 422);
     assert.equal((await run(o, {})).status, 422);
-    assert.equal((await run(o, { type: "cac", number: "RC123" })).status, 422, "unknown field");
+    assert.equal((await run(o, { type: "cac", consent: true })).status, 422, "unknown field");
     assert.equal(calls.length, 0, "nothing reached the provider");
   });
 
@@ -321,11 +322,10 @@ describe("running a check", () => {
     assert.ok(!(await call("GET", "/api/verification", { cookie: o.cookie })).text.toLowerCase().includes("bvn"));
   });
 
-  it("a business with no CAC number is told the CAC check is not needed", async () => {
+  it("a business that said it has no CAC number can still type one", async () => {
     const o = await owner({ hasCac: "No" });
     const by = Object.fromEntries((await call("GET", "/api/verification", { cookie: o.cookie })).json.checks.map((c) => [c.type, c]));
-    assert.equal(by.cac.applicable, false);
-    assert.match(by.cac.reason, /Not needed/);
+    assert.equal(by.cac.applicable, true);
     assert.equal(by.nin.applicable, true);
   });
 
@@ -479,5 +479,133 @@ describe("Verified needs the NIN checked", () => {
     const o = await owner();
     setPrembly(createPrembly(null));
     assert.equal((await setStatus(o, "Verified")).status, 200);
+  });
+});
+
+describe("the CAC flow: type the number, compare it with the one from registration, choose one if they differ", () => {
+  const company = (name = "OBI FABRICS LIMITED", status = "Active") => hit({ company_name: name, company_status: status }, { verification: { reference: "ref-cac" } });
+  const profileOf = async (o) => Business.findOne({ owner: o.user.id });
+
+  it("checks a typed number when none was given at registration, and keeps it once the register has found it", async () => {
+    const o = await owner();
+    answer = () => company();
+    const res = await run(o, { type: "cac", number: "RC 0123456" });
+    assert.equal(res.status, 201, res.text);
+    assert.equal(res.json.check.status, "Passed");
+    assert.equal(res.json.check.registeredName, "OBI FABRICS LIMITED");
+    assert.equal(res.json.cacNumber, "0123456", "the profile now has the number");
+    assert.deepEqual(calls[0].body, { rc_number: "0123456", company_type: "RC" }, "leading zeros kept, no company name sent");
+    const b = await profileOf(o);
+    assert.equal(b.cacNumber, "0123456");
+    assert.equal(b.hasCac, "Yes");
+    assert.ok(b.verificationHistory.some((h) => /CAC number added/.test(h.note)));
+  });
+
+  it("does not keep a typed number the register cannot find", async () => {
+    const o = await owner();
+    answer = () => ({ status: 400, json: {} });
+    const res = await run(o, { type: "cac", number: "RC999999" });
+    assert.equal(res.json.check.status, "Not found");
+    assert.match(res.json.check.message, /CAC register/);
+    assert.equal(res.json.cacNumber, undefined);
+    assert.equal((await profileOf(o)).cacNumber, "");
+  });
+
+  it("treats the same number written differently as the same: no question, one call", async () => {
+    const o = await owner({ hasCac: "Yes", cacNumber: "RC1234567" });
+    answer = () => company();
+    for (const typed of ["RC 1234567", "1234567", "rc-1234567", "RC01234567"]) {
+      const res = await run(o, { type: "cac", number: typed });
+      assert.equal(res.status, 201, typed);
+    }
+    assert.equal(calls.length, 1, "after the first pass the same number is answered from the record");
+    assert.equal((await profileOf(o)).cacNumber, "RC1234567", "the profile's number is not touched");
+  });
+
+  it("stops and asks when the typed number differs from the one given at registration, and checks nothing yet", async () => {
+    const o = await owner({ hasCac: "Yes", cacNumber: "RC1234567" });
+    answer = () => company();
+    const res = await run(o, { type: "cac", number: "RC7654321" });
+    assert.equal(res.status, 409);
+    assert.equal(res.json.error.code, "cac_mismatch");
+    assert.match(res.json.error.message, /Choose the one to use permanently/);
+    assert.deepEqual([res.json.error.fields.entered, res.json.error.fields.onFile], ["7654321", "1234567"]);
+    assert.equal(calls.length, 0, "no paid call, no attempt used");
+    assert.equal(await VerificationCheck.countDocuments({ owner: o.user.id, type: "cac" }), 0);
+    assert.equal((await profileOf(o)).cacNumber, "RC1234567", "nothing changed behind their back");
+  });
+
+  it("use entered: checks the typed number and makes it the permanent one when the register finds it", async () => {
+    const o = await owner({ hasCac: "Yes", cacNumber: "RC1234567" });
+    answer = () => company();
+    const res = await run(o, { type: "cac", number: "RC7654321", use: "entered" });
+    assert.equal(res.status, 201, res.text);
+    assert.equal(calls[0].body.rc_number, "7654321");
+    assert.equal(res.json.cacNumber, "7654321");
+    const b = await profileOf(o);
+    assert.equal(b.cacNumber, "7654321");
+    assert.ok(b.verificationHistory.some((h) => /CAC number changed/.test(h.note)));
+  });
+
+  it("use entered, but the register does not know it: the profile keeps the old number", async () => {
+    const o = await owner({ hasCac: "Yes", cacNumber: "RC1234567" });
+    answer = () => ({ status: 400, json: {} });
+    const res = await run(o, { type: "cac", number: "RC7654321", use: "entered" });
+    assert.equal(res.json.check.status, "Not found");
+    assert.equal((await profileOf(o)).cacNumber, "RC1234567");
+  });
+
+  it("use profile: checks the number from registration and leaves the profile alone", async () => {
+    const o = await owner({ hasCac: "Yes", cacNumber: "RC1234567" });
+    answer = () => company();
+    const res = await run(o, { type: "cac", number: "RC7654321", use: "profile" });
+    assert.equal(res.status, 201, res.text);
+    assert.equal(calls[0].body.rc_number, "1234567");
+    assert.equal(res.json.cacNumber, undefined);
+    assert.equal((await profileOf(o)).cacNumber, "RC1234567");
+  });
+
+  it("still works without typing anything when the number is on the profile", async () => {
+    const o = await owner({ hasCac: "Yes", cacNumber: "BN998877", businessType: "Business name (sole owner or partnership)" });
+    answer = () => company("Obi Fabrics");
+    const res = await run(o, { type: "cac" });
+    assert.equal(res.status, 201, res.text);
+    assert.deepEqual(calls[0].body, { rc_number: "998877", company_type: "BN" });
+  });
+
+  it("asks for a number when there is none anywhere, and refuses a malformed one or an unknown choice", async () => {
+    const o = await owner();
+    const none = await run(o, { type: "cac" });
+    assert.equal(none.status, 422);
+    assert.match(none.json.error.fields.number, /Enter your CAC registration number/);
+    assert.equal((await run(o, { type: "cac", number: "RC#12" })).status, 422);
+    assert.equal((await run(o, { type: "cac", number: "RC1234567", use: "both" })).status, 422);
+    assert.equal(calls.length, 0);
+  });
+
+  it("explains why a limited liability partnership or an unregistered business type cannot be checked", async () => {
+    const llp = await owner({ businessType: "Limited liability partnership" });
+    const a = await run(llp, { type: "cac", number: "LLP1234" });
+    assert.equal(a.status, 422);
+    assert.match(a.json.error.fields.type, /Limited liability partnerships/);
+    const none = await owner({ businessType: "Not yet registered with the CAC" });
+    const b = await run(none, { type: "cac", number: "RC1234" });
+    assert.match(b.json.error.fields.type, /not registered with the CAC/);
+    assert.equal(calls.length, 0);
+  });
+
+  it("a registered name that does not match needs review, and the owner is told what the register shows", async () => {
+    const o = await owner({ businessName: "Alpha Traders" });
+    answer = () => company("SOMETHING ELSE LTD");
+    const res = await run(o, { type: "cac", number: "RC1234567" });
+    assert.equal(res.json.check.status, "Needs review");
+    assert.equal(res.json.check.registeredName, "SOMETHING ELSE LTD");
+    assert.match(res.json.check.message, /NMREP staff will review/);
+  });
+
+  it("shows the number on the profile in the list", async () => {
+    const o = await owner({ hasCac: "Yes", cacNumber: "RC1234567" });
+    const by = Object.fromEntries((await call("GET", "/api/verification", { cookie: o.cookie })).json.checks.map((c) => [c.type, c]));
+    assert.equal(by.cac.numberOnFile, "RC1234567");
   });
 });

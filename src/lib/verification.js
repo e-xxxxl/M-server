@@ -24,7 +24,7 @@ export const checkInfo = {
   },
   cac: {
     label: "CAC registration",
-    description: "Only for businesses registered with the CAC. Checks the CAC registration number in your profile against the public company register and compares the registered name with your business name.",
+    description: "Only for businesses registered with the CAC. Type your CAC registration number. We look it up on the public company register, compare the registered name with your business name, and compare the number with the one you gave when you registered. If the two numbers differ, you choose which one to keep.",
     needsNumber: false,
     required: false,
   },
@@ -35,15 +35,24 @@ const message = {
   "Needs review": "We found a record, but the name on it does not clearly match your details. Write your name or business name exactly as it is on the record, then try again, or wait for NMREP to review it.",
   "Not found": "We could not find a record for this number. Check that it is correct, then try again.",
 };
+const cacMessage = {
+  Passed: "Your CAC registration was found and the name matches.",
+  "Needs review": "We found this CAC number, but the registered name or status does not clearly match your business. NMREP staff will review it. You can also correct your business name in your profile and try again.",
+  "Not found": "We could not find this number on the CAC register. Check the number and your business type (a business name, a private or public company, or incorporated trustees), then try again.",
+};
 
 // The CAC register's own codes for each kind of registration.
 const companyTypes = {
   "Business name (sole owner or partnership)": "BN",
   "Private limited company": "RC",
   "Public limited company": "RC",
-  "Limited liability partnership": "LLP",
   "Incorporated trustees (association or NGO)": "IT",
 };
+
+/** A CAC number as it is sent to the register: without the RC, BN or IT in front, and without spaces. Leading zeros are kept. */
+const cleanCac = (value) => String(value ?? "").trim().toUpperCase().replace(/^(RC|BN|IT|LP|LLP)[\s-]*/, "").replace(/\s+/g, "");
+/** The same number for comparing only: letters and digits, no leading zeros, so "RC 0123456" and "123456" are one number. */
+const cacKey = (value) => cleanCac(value).replace(/[^A-Z0-9]/g, "").replace(/^0+/, "");
 
 const inactive = /inactive|struck|dissolved|revoked|suspended|ceased|liquidat/i;
 
@@ -57,21 +66,39 @@ export const verificationEnabled = (config) => prembly.enabled && String(config.
 /** Whether a check can be run for this business now, and why not. */
 export function applicability(type, business) {
   if (type === "cac") {
-    if (!business.cacNumber) {
-      return business.hasCac === "No"
-        ? "Not needed: your business is not registered with the CAC. Your NIN check is enough."
-        : "Add your CAC registration number to your business profile first.";
-    }
-    if (!companyTypes[business.businessType]) return "Your business type is not registered with the CAC.";
+    if (business.businessType === "Limited liability partnership") return "Limited liability partnerships cannot be checked automatically yet. NMREP staff will review your CAC number.";
+    if (!companyTypes[business.businessType]) return "Your business type says it is not registered with the CAC. If that is wrong, change the business type in your profile first.";
   }
   return "";
 }
 
-/** The number a check is about: typed for the NIN, taken from the profile for the CAC. */
-function valueFor(type, business, input) {
-  if (type === "cac") return String(business.cacNumber).replace(/^(RC|BN|IT|LP|LLP)[\s-]*/i, "").trim();
-  return input.number;
+/**
+ * Which CAC number to check. The owner types one. It is compared with the one given at registration (on the profile):
+ * the same number is simply checked; a different number is not checked until the owner says which to keep for good
+ * (`use`: "entered" or "profile"), so nothing is changed behind their back. Returns { value, adopt }: adopt means the
+ * typed number should become the profile's number once the register has confirmed it.
+ */
+function planCac(business, input) {
+  const typed = cleanCac(input.number);
+  const onFile = cleanCac(business.cacNumber);
+  if (!typed && !onFile) throw new ApiError(422, "validation", "Please check the highlighted fields.", { number: "Enter your CAC registration number." });
+  if (!typed) return { value: onFile, adopt: false };
+  if (!onFile) return { value: typed, adopt: true };
+  if (cacKey(typed) === cacKey(onFile)) return { value: typed, adopt: false };
+  if (input.use === "profile") return { value: onFile, adopt: false };
+  if (input.use === "entered") return { value: typed, adopt: true };
+  throw new ApiError(409, "cac_mismatch", "The CAC number you typed is different from the one you gave when you registered. Choose the one to use permanently.", { entered: typed, onFile });
 }
+
+/** Makes the typed CAC number the profile's number, with a note in the history. */
+async function adoptCac(business, value) {
+  const before = business.cacNumber;
+  business.cacNumber = value;
+  business.hasCac = "Yes";
+  business.verificationHistory.push({ status: business.verificationStatus, at: new Date(), note: before ? "CAC number changed after a check found it on the register" : "CAC number added after a check found it on the register" });
+  await business.save();
+}
+
 
 /** What the owner is told. Never includes anything from the provider's record. */
 export function ownerView(check) {
@@ -81,7 +108,7 @@ export function ownerView(check) {
     status: check.status,
     maskedValue: check.maskedValue,
     checkedAt: check.checkedAt,
-    message: message[check.status],
+    message: (check.type === "cac" ? cacMessage : message)[check.status],
     // The CAC register is public, so the owner may be told what it shows. This is what to correct when the names differ.
     ...(check.type === "cac" && check.registeredName ? { registeredName: check.registeredName } : {}),
   };
@@ -153,12 +180,20 @@ export async function runCheck({ config, business, user, input }) {
   const problem = applicability(type, business);
   if (problem) throw new ApiError(422, "validation", "Please check the highlighted fields.", { type: problem });
 
-  const value = valueFor(type, business, input);
-  const hash = fingerprint(config, type, value);
+  // The CAC number may be typed; if it differs from the one on the profile the owner must choose before anything is checked.
+  const plan = type === "cac" ? planCac(business, input) : null;
+  const value = plan ? plan.value : input.number;
+  const hash = fingerprint(config, type, plan ? cacKey(value) : value);
 
   // The same number already passed for this business: answer from the record, without a (paid) provider call.
   const same = await VerificationCheck.findOne({ business: business._id, type, valueHash: hash, status: "Passed" }).sort({ checkedAt: -1 });
-  if (same) return same;
+  if (same) {
+    if (plan?.adopt) {
+      await adoptCac(business, value);
+      same.adoptedNumber = value;
+    }
+    return same;
+  }
 
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const recent = await VerificationCheck.find({ business: business._id, checkedAt: mongoose.trusted({ $gte: since }) }).select("type");
@@ -191,6 +226,12 @@ export async function runCheck({ config, business, user, input }) {
     reference: result.reference ?? "",
     consentAt: checkInfo[type].needsNumber ? new Date() : null,
   });
+
+  // The typed CAC number replaces the profile's only once the register has really found it.
+  if (plan?.adopt && check.status !== "Not found") {
+    await adoptCac(business, value);
+    check.adoptedNumber = value;
+  }
 
   // A record was found but a person has to decide: tell the staff inbox.
   if (check.status === "Needs review") {
@@ -245,7 +286,8 @@ async function runProvider(type, business, user, value) {
     const phoneMatch = theirs ? theirs === phoneTail(user.phone) : null;
     return { status: nameMatch ? "Passed" : "Needs review", nameMatch, phoneMatch, reference: r.reference };
   }
-  const r = await prembly.cac({ number: value, companyType: companyTypes[business.businessType], companyName: business.businessName });
+  // The register is asked by number and type only; the names are compared here.
+  const r = await prembly.cac({ number: value, companyType: companyTypes[business.businessType] });
   if (r.unavailable) return r;
   if (!r.found) return { status: "Not found", reference: r.reference };
   // A business name is often registered in the owner's name, so the owner's name counts too.

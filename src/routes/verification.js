@@ -39,6 +39,8 @@ export function verificationRoutes({ config }) {
           label: checkInfo[type].label,
           description: checkInfo[type].description,
           needsNumber: checkInfo[type].needsNumber,
+          // The CAC check takes a typed number; the one on the profile is shown so it can be compared and corrected.
+          ...(type === "cac" ? { acceptsNumber: true, numberOnFile: business.cacNumber ?? "" } : {}),
           required: checkInfo[type].required,
           applicable: reason === "",
           reason,
@@ -83,7 +85,7 @@ export function verificationRoutes({ config }) {
     const input = verificationCheckSchema.parse(req.body);
     const business = await ownBusiness(req);
     const check = await runCheck({ config, business, user: req.user, input });
-    res.status(201).json({ check: ownerView(check), verificationStatus: business.verificationStatus });
+    res.status(201).json({ check: ownerView(check), verificationStatus: business.verificationStatus, ...(check.adoptedNumber ? { cacNumber: check.adoptedNumber } : {}) });
   });
 
   return router;

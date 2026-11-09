@@ -282,7 +282,15 @@ const agreement = z.literal(true, { message: "Please agree so we can run this ch
 export const verificationCheckSchema = z.discriminatedUnion(
   "type",
   [
-    z.object({ type: z.literal("cac") }).strict(),
+    z
+      .object({
+        type: z.literal("cac"),
+        // The CAC registration number, typed by the owner. Left out, the number on the profile is checked.
+        number: z.string().trim().min(3, "Enter your CAC registration number.").max(30).regex(/^[A-Za-z0-9 /-]+$/, "Use letters and digits only, for example RC1234567.").optional(),
+        // When the typed number differs from the profile's: which one to keep permanently.
+        use: z.enum(["entered", "profile"], { message: "Choose `entered` or `profile`." }).optional(),
+      })
+      .strict(),
     z.object({ type: z.literal("nin"), number: elevenDigits, consent: agreement }).strict(),
   ],
   { message: "Choose one of the listed options." },
