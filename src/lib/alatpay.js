@@ -79,7 +79,7 @@ export function createAlatpay(cfg, { fetchImpl = fetch, log = console } = {}) {
         transactionId: String(d.transactionId),
         accountNumber: String(d.virtualBankAccountNumber),
         bankCode: String(d.virtualBankCode ?? ""),
-        expiresAt: d.expiredAt ? new Date(d.expiredAt) : new Date(Date.now() + 24 * 60 * 60 * 1000),
+        expiresAt: d.expiredAt ? parseWat(d.expiredAt) : new Date(Date.now() + 24 * 60 * 60 * 1000),
       };
     },
 
@@ -103,10 +103,23 @@ export function createAlatpay(cfg, { fetchImpl = fetch, log = console } = {}) {
         status,
         amountKobo: Math.round(Number(d.amount) * 100),
         currency: String(d.currency ?? ""),
-        paidAt: status === "success" && d.updatedAt ? new Date(d.updatedAt) : null,
+        paidAt: status === "success" && d.updatedAt ? parseWat(d.updatedAt) : null,
       };
     },
   };
+}
+
+/**
+ * A time from ALATPay as a Date. ALATPay writes times in Nigerian time (West Africa Time, UTC+1) WITHOUT saying so, and a
+ * server reads such text as its own clock (UTC), which puts every time an hour ahead. Text with no zone is read as +01:00;
+ * text that names a zone (Z or +hh:mm) is taken as written.
+ */
+export function parseWat(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return new Date(NaN);
+  const named = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(text);
+  const iso = text.replace(" ", "T");
+  return new Date(named ? iso : `${iso}+01:00`);
 }
 
 // One client for the whole process, set up once at start. Until then (and in tests) the feature is off.

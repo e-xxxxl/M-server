@@ -160,7 +160,7 @@ export async function settlePayment(config, reference, { userId = null, now = ne
       await notify(user._id, {
         type: "payment",
         title: "Registration fee received",
-        body: `Thank you. Your registration for ${payment.years ?? 1} year${(payment.years ?? 1) === 1 ? "" : "s"} is paid until ${user.registrationPaidUntil.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Lagos" })}.`,
+        body: `Thank you. Your registration for ${payment.years ?? 1} year${(payment.years ?? 1) === 1 ? "" : "s"} is paid until ${user.registrationPaidUntil.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Lagos" })}. Next, verify your NIN from the Verification page.`,
         link: "/dashboard/",
       });
       alertPaymentReceived(config, { business: await Business.findOne({ owner: user._id }).select("businessName"), user, payment: claimed });

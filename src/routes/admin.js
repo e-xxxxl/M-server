@@ -160,6 +160,7 @@ export function adminRoutes({ config }) {
                 ownerName: 1,
                 email: "$ownerUser.email",
                 accountActive: { $ne: ["$ownerUser.active", false] },
+                registrationPaidUntil: "$ownerUser.registrationPaidUntil",
                 state: 1,
                 sector: 1,
                 verificationStatus: 1,

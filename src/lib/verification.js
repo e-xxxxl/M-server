@@ -151,6 +151,9 @@ export async function recordRegistrationNin({ config, business, user, nin, waitM
   if (String(config.verification.hashKey).length >= 32) business.ninHash = fingerprint(config, "nin", nin);
   await business.save();
   if (!verificationEnabled(config)) return null;
+  // Nothing is verified before the registration fee is paid: a new owner has not paid yet, so the check waits until they have
+  // (they enter the NIN again on the Verification page).
+  if (config.payments.enabled) return null;
   const run = runCheck({ config, business, user, input: { type: "nin", number: nin, consent: true } }).catch(() => null);
   return Promise.race([run, new Promise((resolve) => setTimeout(() => resolve(null), waitMs).unref?.())]);
 }
@@ -176,6 +179,10 @@ export async function runCheck({ config, business, user, input }) {
   const { type } = input;
   if (!verificationEnabled(config)) {
     throw new ApiError(503, "verification_unavailable", "Verification is not available right now. Please try again later.");
+  }
+  // Whoever calls this, an owner who has not paid the registration fee cannot have anything verified.
+  if (config.payments.enabled && user?.role === "msme_owner" && !(user.registrationPaidUntil && user.registrationPaidUntil > new Date())) {
+    throw new ApiError(402, "payment_required", "Please pay your registration fee before verifying your NIN or CAC.");
   }
   const problem = applicability(type, business);
   if (problem) throw new ApiError(422, "validation", "Please check the highlighted fields.", { type: problem });

@@ -7,7 +7,7 @@ import { User } from "../models/User.js";
 import { VerificationCheck } from "../models/VerificationCheck.js";
 import { VerificationSubmission } from "../models/VerificationSubmission.js";
 import { verificationStatuses } from "../options.js";
-import { checkTypes, duplicatesOf, verificationEnabled } from "../lib/verification.js";
+import { checkTypes, duplicatesOf, reviewerView, verificationEnabled } from "../lib/verification.js";
 
 const querySchema = z
   .object({
@@ -40,7 +40,7 @@ export function adminVerificationRoutes({ config }) {
     const [checks, submissions, owners] = await Promise.all([
       VerificationCheck.find({ business: mongoose.trusted({ $in: ids }), type: mongoose.trusted({ $in: checkTypes }) }).sort({ checkedAt: -1 }),
       VerificationSubmission.find({ business: mongoose.trusted({ $in: ids }) }).lean(),
-      User.find({ _id: mongoose.trusted({ $in: businesses.map((b) => b.owner) }) }).select("fullName email phone").lean(),
+      User.find({ _id: mongoose.trusted({ $in: businesses.map((b) => b.owner) }) }).select("fullName email phone registrationPaidUntil emailVerifiedAt active lastLoginAt").lean(),
     ]);
     const latest = new Map();
     for (const c of checks) {
@@ -50,18 +50,8 @@ export function adminVerificationRoutes({ config }) {
     const docsOf = new Map(submissions.map((s) => [String(s.business), s.documents.length]));
     const ownerOf = new Map(owners.map((o) => [String(o._id), o]));
 
-    const brief = async (c) =>
-      c
-        ? {
-            status: c.status,
-            checkedAt: c.checkedAt,
-            nameMatch: c.nameMatch,
-            phoneMatch: c.phoneMatch,
-            registeredName: c.registeredName,
-            companyStatus: c.companyStatus,
-            otherBusinessesWithSameNumber: await duplicatesOf(c),
-          }
-        : null;
+    // Everything a reviewer may see about one check: the outcome, what was compared, the masked number, the provider reference.
+    const brief = async (c) => (c ? reviewerView(c, await duplicatesOf(c)) : null);
 
     const items = [];
     for (const b of businesses) {
@@ -78,6 +68,10 @@ export function adminVerificationRoutes({ config }) {
         ownerName: owner?.fullName ?? b.ownerName,
         ownerEmail: owner?.email ?? "",
         ownerPhone: owner?.phone ?? "",
+        registrationPaidUntil: owner?.registrationPaidUntil ?? null,
+        emailVerified: Boolean(owner?.emailVerifiedAt),
+        accountActive: owner?.active !== false,
+        lastLoginAt: owner?.lastLoginAt ?? null,
         hasCac: b.hasCac,
         cacNumber: b.cacNumber,
         ninGiven: Boolean(b.ninMasked),
@@ -85,6 +79,7 @@ export function adminVerificationRoutes({ config }) {
         nin: await brief(latest.get(`${b._id}:nin`)),
         cac: await brief(latest.get(`${b._id}:cac`)),
         documentsShared: docsOf.get(String(b._id)) ?? 0,
+        history: (b.verificationHistory ?? []).slice(-8).reverse().map((h) => ({ status: h.status, at: h.at, note: h.note })),
         lastNote: b.verificationHistory?.at(-1)?.note ?? "",
         lastChangedAt: b.verificationHistory?.at(-1)?.at ?? null,
       });

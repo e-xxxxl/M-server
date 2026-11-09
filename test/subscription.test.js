@@ -215,10 +215,17 @@ describe("a NIN that Prembly confirms verifies the business at once", () => {
 
   it("sets Verified, issues the ID and tells the owner, with nothing for an admin to do", async () => {
     setPrembly(createPrembly({ apiKey: "k", baseUrl: "https://api.prembly.test" }, { fetchImpl: async () => record(), log: { log() {}, error() {} } }));
-    const res = await call("POST", "/api/auth/register", { body: registrationBody() });
+    const body = registrationBody();
+    const res = await call("POST", "/api/auth/register", { body });
     assert.equal(res.status, 201, res.text);
-    assert.equal(res.json.business.verificationStatus, "Verified");
-    assert.match(res.json.business.nmrepId, /^NMREP-\d{4}-\d{8}$/);
+    assert.equal(res.json.business.verificationStatus, "Unverified", "not before the fee is paid");
+    assert.equal(res.json.business.nmrepId, null);
+    await User.updateOne({ _id: res.json.user.id }, { $set: { registrationPaidUntil: new Date(Date.now() + 100 * DAY) } });
+    const run = await call("POST", "/api/verification/checks", { cookie: res.cookie, body: { type: "nin", number: body.account.nin, consent: true } });
+    assert.equal(run.status, 201, run.text);
+    assert.equal(run.json.verificationStatus, "Verified");
+    const business = await Business.findById(res.json.business.id);
+    assert.match(business.nmrepId, /^NMREP-\d{4}-\d{8}$/);
     assert.equal(await Notification.countDocuments({ user: res.json.user.id, title: /is verified/ }), 1);
   });
 

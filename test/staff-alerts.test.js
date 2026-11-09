@@ -4,6 +4,7 @@ import { loadConfig } from "../src/config.js";
 import { setMailer } from "../src/lib/mailer.js";
 import { setPaystack } from "../src/lib/paystack.js";
 import { createPrembly, setPrembly } from "../src/lib/prembly.js";
+import { User } from "../src/models/User.js";
 import { client, registrationBody, startTestServer } from "./helpers.js";
 
 // Alerts to the NMREP staff inbox (admin@nmrep.org): a new registration, a fee paid, a check that needs a reviewer, and
@@ -44,6 +45,16 @@ beforeEach(() => {
   setMailer({ enabled: true, send: async (m) => (sent.push(m), { ok: true }) }, { notifications: true, appUrl: "https://nmrep.test" });
 });
 
+/** Signs up, pays (the fee must be paid before anything is verified), then runs the NIN check as the owner would. */
+const registerAndCheck = async (business = {}, account = {}) => {
+  const body = registrationBody({ business, account });
+  const res = await call("POST", "/api/auth/register", { body });
+  assert.equal(res.status, 201, res.text);
+  await User.updateOne({ _id: res.json.user.id }, { registrationPaidUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) });
+  await call("POST", "/api/verification/checks", { cookie: res.cookie, body: { type: "nin", number: body.account.nin, consent: true } });
+  return res;
+};
+
 const register = async (business = {}, account = {}) => {
   const res = await call("POST", "/api/auth/register", { body: registrationBody({ business, account }) });
   assert.equal(res.status, 201, res.text);
@@ -70,11 +81,15 @@ describe("a new registration", () => {
     assert.ok(!text.includes(res.json.user.email) && !text.includes(res.json.user.phone));
   });
 
-  it("says when the NIN matched and the business was verified", async () => {
-    setPrembly(createPrembly({ apiKey: "k", baseUrl: "https://api.prembly.test" }, { fetchImpl: ninHit(["Ada", "Obi"]), log: quiet }));
+  it("says the fee is not paid yet and that the NIN is checked after payment, and never checks it first", async () => {
+    let asked = 0;
+    setPrembly(createPrembly({ apiKey: "k", baseUrl: "https://api.prembly.test" }, { fetchImpl: async (...a) => (asked += 1, ninHit(["Ada", "Obi"])(...a)), log: quiet }));
     await register();
     await wait();
-    assert.match(toStaff().find((m) => /New registration/.test(m.subject)).text, /Verified \(the NIN matched\)/);
+    const text = toStaff().find((m) => /New registration/.test(m.subject)).text;
+    assert.match(text, /Registration fee: not paid yet/);
+    assert.match(text, /checked once the fee is paid/);
+    assert.equal(asked, 0);
   });
 });
 
@@ -106,7 +121,7 @@ describe("a registration fee", () => {
 describe("a check that needs a reviewer", () => {
   it("is emailed when the NIN record is in a different name, and not when it matches or is not found", async () => {
     setPrembly(createPrembly({ apiKey: "k", baseUrl: "https://api.prembly.test" }, { fetchImpl: ninHit(["Emeka", "Eze"]), log: quiet }));
-    await register({ businessName: "Mismatch Co" });
+    await registerAndCheck({ businessName: "Mismatch Co" });
     await wait();
     const mail = toStaff().find((m) => /Needs a reviewer/.test(m.subject));
     assert.ok(mail);
@@ -115,9 +130,9 @@ describe("a check that needs a reviewer", () => {
 
     sent.length = 0;
     setPrembly(createPrembly({ apiKey: "k", baseUrl: "https://api.prembly.test" }, { fetchImpl: ninHit(["Ada", "Obi"]), log: quiet }));
-    await register();
+    await registerAndCheck();
     setPrembly(createPrembly({ apiKey: "k", baseUrl: "https://api.prembly.test" }, { fetchImpl: async () => new Response("{}", { status: 400 }), log: quiet }));
-    await register();
+    await registerAndCheck();
     await wait();
     assert.equal(toStaff().filter((m) => /Needs a reviewer/.test(m.subject)).length, 0);
   });
