@@ -31,6 +31,7 @@ import { createLimiters, requireAllowedOrigin } from "./middleware/security.js";
 import { configureUnsubscribe } from "./lib/unsubscribe.js";
 import { deviceRoutes } from "./routes/devices.js";
 import { alatpayWebhook, paymentRoutes, paystackWebhook } from "./routes/payments.js";
+import { playWebhook } from "./lib/play-billing.js";
 
 /** Builds the Express app. Kept separate from server.js so tests can run it against an in-memory database. */
 export function createApp(config, { log = true } = {}) {
@@ -72,6 +73,8 @@ export function createApp(config, { log = true } = {}) {
   // Paystack's webhook is signed over the exact bytes it sends, so it reads the raw body, before the JSON reader.
   app.post("/api/webhooks/paystack", ...paystackWebhook({ config }));
   app.post("/api/webhooks/alatpay", ...alatpayWebhook({ config }));
+  // Google Play real-time notifications (renewals, cancellations, refunds) come through a Pub/Sub push subscription.
+  app.post("/api/webhooks/google-play", ...playWebhook({ config }));
   app.use(express.json({ limit: "20kb" }));
   app.use(cookieParser());
   app.use("/api", requireAllowedOrigin(config.corsOrigins));

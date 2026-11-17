@@ -397,6 +397,19 @@ export function adminRoutes({ config }) {
     res.json({ admin: target.toJSON(), temporaryPassword });
   });
 
+  // A staff member lost their phone: the super admin switches their two-factor sign-in off so they can sign in and set it up again.
+  router.post("/admins/:id/two-factor/reset", superOnly, async (req, res) => {
+    const target = await plainAdmin(req.params.id);
+    target.twoFactorEnabled = false;
+    target.twoFactorSecret = "";
+    target.twoFactorLastStep = 0;
+    target.twoFactorRecovery = [];
+    await target.save();
+    await Session.deleteMany({ user: target._id });
+    await audit(req.user, "admin.two-factor-reset", `Switched off two-factor sign-in for ${target.fullName}`, { type: "user", id: target._id });
+    res.json({ admin: target.toJSON() });
+  });
+
   // ------------------------------------------------------------ activity log
   router.get("/audit", superOnly, async (req, res) => {
     const { page = 1 } = pageQuerySchema.parse(req.query);

@@ -53,6 +53,19 @@ export function alertPaymentReceived(config, { business, user, payment }) {
   });
 }
 
+/** An owner subscribed through Google Play in the mobile app. */
+export function alertPlaySubscribed(config, { business, user, expiresAt }) {
+  alertStaff(config, {
+    title: `Subscription through Google Play: ${business?.businessName ?? user.fullName}`,
+    lines: [
+      `${business?.businessName ?? "A business"} subscribed in the mobile app through Google Play.`,
+      `Owner: ${user.fullName}`,
+      `Paid until: ${day(expiresAt)}. The amount is in the Google Play Console, not here.`,
+    ],
+    path: "/admin/businesses/",
+  });
+}
+
 /** A check found a record that a person must look at. */
 export function alertNeedsReviewer(config, { business, user, type, reason }) {
   alertStaff(config, {

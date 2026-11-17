@@ -875,3 +875,20 @@ When email is on, the server emails **admin@nmrep.org** about: a new registratio
 - `STAFF_ALERT_EMAIL` in `/opt/nmrep/shared/.env` changes the address, or lists several separated by commas. `STAFF_ALERT_EMAIL=` (empty) switches the alerts off.
 - `CONTACT_EMAIL` is only needed if the contact form should go to a different inbox from the alerts.
 - The sending address (`EMAIL_FROM`) and `RESEND_API_KEY` must already be set, otherwise no email goes out at all. admin@nmrep.org must be a real mailbox that can receive mail.
+
+### 10.12 Two-factor sign-in for staff (optional) and the exports
+
+- **Two-factor sign-in** is optional for each admin and super admin. It needs `DOCUMENT_ENCRYPTION_KEY` (the same 32-byte key that protects documents, section 10.5); without it the Account page says it is not available. Each person switches it on themselves under Account, Two-factor sign-in: they type a key into an authenticator app (Google Authenticator, Microsoft Authenticator, Authy, 1Password), confirm with the first code, and keep the eight recovery codes shown once. The secret is stored encrypted, a code works once, and a wrong code counts towards the same lock-out as a wrong password.
+- **A staff member lost their phone:** a super admin opens Admins and presses "Reset two-factor" (it appears only for admins who have it on). **A super admin who lost their phone and recovery codes** cannot be reset in the portal. On the server run `npm run reset-two-factor -- their@email.com`, then they sign in with the password alone and set it up again. Keep the recovery codes safe, and back up the encryption key: if it is lost, app codes stop working for everyone who has two-factor on (their recovery codes still work).
+- **Exports:** Reports lets any admin download businesses as a spreadsheet filtered by state, area (LGA), business category (sector), business type, verification status, paid or unpaid, and the days people registered (Nigerian days). The super admin's Payments page filters by a time range and has a download button that includes the business, place and owner. Each download is written to the activity log with the filters used.
+
+### 10.13 Subscriptions bought in the mobile app (Google Play)
+
+The app sells the yearly subscription (product `nmrep_annual`, base plan `yearly`, package `com.onlinebizproj.nmrepmbl`) through Google Play. A Play purchase gives the account exactly what a website payment gives: the same paid-until date, the same paywall, the same automatic suspension if it is not renewed. Price, currency and Google's commission are set in the Play Console, not in NMREP.
+
+1. **Service account.** In Google Cloud (any project) create a service account, make a JSON key, and in the Play Console under Users and permissions invite its email address with access to the NMREP app (view financial data and manage orders and subscriptions). It can take a few hours to start working. This is not the Firebase key.
+2. **Put the key on the server, outside the website folder:** `/opt/nmrep/shared/google-play-service-account.json` (permissions 600), then set `GOOGLE_PLAY_SERVICE_ACCOUNT_FILE` in `.env` and restart. The start-up log says "Google Play subscriptions are on".
+3. **Notifications (recommended).** In the Play Console, Monetisation setup, Real-time developer notifications: create a Pub/Sub topic, then a **push** subscription to `https://api.nmrep.ng/api/webhooks/google-play?secret=<GOOGLE_PLAY_RTDN_SECRET>`. Without it renewals and refunds are still picked up by an hourly check, only later.
+4. **Test** with a license tester account in the Play Console: buy in the app, and the account becomes active (the app then shows no paywall and the website shows the account as paid).
+
+If the key is missing the app cannot confirm purchases (503 `play_unavailable`); website payments are unaffected. Apple (App Store) purchases are not built yet.

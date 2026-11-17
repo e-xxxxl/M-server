@@ -10,6 +10,7 @@ import { User } from "../models/User.js";
 import { ConsentRecord } from "../models/ConsentRecord.js";
 import { DOCUMENT_WARNING_DAYS } from "./documents.js";
 import { closeExpiredOpportunities, runSubscriptionReminders, suspendLapsedSubscriptions } from "./subscription.js";
+import { refreshLapsedPlaySubscriptions } from "./play-billing.js";
 import { evaluate } from "./eligibility.js";
 
 /**
@@ -146,6 +147,8 @@ export async function runReminders(now = new Date(), config = null) {
  */
 export async function runMaintenance(config, now = new Date()) {
   try {
+    // Google Play renewals the server did not hear about are asked about first, so a renewed subscription is not suspended.
+    if (config) await refreshLapsedPlaySubscriptions(config, now).catch((err) => console.error("Google Play refresh failed:", err?.name));
     return { closed: await closeExpiredOpportunities(now), suspended: await suspendLapsedSubscriptions(config, now) };
   } catch (err) {
     console.error("Maintenance job failed:", err?.name);

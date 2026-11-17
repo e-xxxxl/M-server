@@ -182,6 +182,8 @@ export const loginSchema = z
     identifier: z.string().trim().min(1, "Enter your email or phone number.").max(254).optional(),
     email: z.string().trim().min(1, "Enter your email or phone number.").max(254).optional(),
     password: z.string().min(1).max(200),
+    // The 6-digit code from an authenticator app, or a recovery code. Only staff who switched on two-factor sign-in need it.
+    code: z.string().trim().max(20).optional(),
     // The phone's push token (optional; missing or "" means none).
     devicePushToken: optionalDevicePushToken,
   })
@@ -257,6 +259,20 @@ export const accountPatchSchema = z
 
 /** Deleting an account asks for the password again, so a stolen session alone cannot do it. */
 export const deleteAccountSchema = z.object({ password: z.string().min(1).max(200) }).strict();
+
+export const twoFactorEnableSchema = z.object({ code: z.string().trim().min(6, "Enter the 6-digit code.").max(20) }).strict();
+export const twoFactorPasswordSchema = z.object({ password: z.string().min(1).max(200) }).strict();
+export const twoFactorDisableSchema = z.object({ password: z.string().min(1).max(200), code: z.string().trim().min(6).max(20) }).strict();
+
+/** The purchase an app sends after buying a subscription in Google Play. */
+export const playVerifySchema = z
+  .object({
+    productId: z.string().trim().min(1).max(100),
+    purchaseToken: z.string().trim().min(10).max(2000),
+    packageName: z.string().trim().min(1).max(200),
+    basePlanId: z.string().trim().max(100).optional(),
+  })
+  .strict();
 
 export const forgotPasswordSchema = z.object({ email: emailSchema }).strict();
 
@@ -355,6 +371,32 @@ export const businessListQuerySchema = z
     agent: z.preprocess(blankToUndefined, objectId.optional()),
   })
   .strict();
+
+/** A calendar day as YYYY-MM-DD, read as a day in Nigeria. */
+const realDay = (s) => {
+  const d = new Date(`${s}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().startsWith(s);
+};
+const dayField = z.preprocess(
+  blankToUndefined,
+  z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a date like 2026-11-30.").refine(realDay, "That is not a real date.").optional(),
+);
+const inOrder = [(v) => !v.from || !v.to || v.from <= v.to, { message: "The start date must not be after the end date.", path: ["to"] }];
+
+/** Which businesses to put in the export. Every filter is optional; no filter means everyone. */
+export const businessExportQuerySchema = z
+  .object({
+    state: z.preprocess(blankToUndefined, oneOf(o.states).optional()),
+    lga: z.preprocess(blankToUndefined, z.string().trim().max(80).optional()),
+    sector: z.preprocess(blankToUndefined, oneOf(o.sectors).optional()),
+    businessType: z.preprocess(blankToUndefined, oneOf(o.businessTypes).optional()),
+    status: z.preprocess(blankToUndefined, oneOf(o.verificationStatuses).optional()),
+    fee: z.preprocess(blankToUndefined, z.enum(["paid", "unpaid"], { message: "Choose paid or unpaid." }).optional()),
+    from: dayField,
+    to: dayField,
+  })
+  .strict()
+  .refine(...inOrder);
 
 export const pageQuerySchema = z
   .object({ page: z.preprocess(blankToUndefined, intInRange(1, 100000).optional()) })

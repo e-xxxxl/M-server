@@ -56,6 +56,35 @@ const cacKey = (value) => cleanCac(value).replace(/[^A-Z0-9]/g, "").replace(/^0+
 
 const inactive = /inactive|struck|dissolved|revoked|suspended|ceased|liquidat/i;
 
+/**
+ * Why a CAC check needs a reviewer, from what was kept: the name on the register did not match, or the register shows the
+ * business as not active (INACTIVE, struck off, and so on), or both. Empty when it did not need a reviewer.
+ */
+export function cacReason(check) {
+  if (check.type !== "cac" || check.status !== "Needs review") return "";
+  const nameBad = check.nameMatch === false;
+  const statusBad = inactive.test(check.companyStatus ?? "");
+  const shown = check.companyStatus ? `"${check.companyStatus}"` : "not active";
+  if (nameBad && statusBad) return `The registered name does not match the business, and the register shows the company as ${shown}.`;
+  if (statusBad) return `The registered name matches, but the register shows the company as ${shown}.`;
+  if (nameBad) return "The register shows the company as active, but the registered name does not match the business name or the owner's name.";
+  return "The register's answer needs a person to look at it.";
+}
+
+/** What the owner is told for a CAC check that needs a reviewer: the real reason, and what to do about it. */
+function cacReviewMessage(check) {
+  const nameBad = check.nameMatch === false;
+  const statusBad = inactive.test(check.companyStatus ?? "");
+  const shown = check.companyStatus ? check.companyStatus.toUpperCase() : "not active";
+  if (statusBad && !nameBad) {
+    return `We found this CAC number and the name matches, but the CAC register shows the business as ${shown}. A business that is not active on the register cannot be confirmed automatically, so NMREP staff will review it. If the status is out of date, bring it up to date with the CAC and try again.`;
+  }
+  if (statusBad && nameBad) {
+    return `We found this CAC number, but the registered name does not match your business and the CAC register shows it as ${shown}. NMREP staff will review it. Check the number, correct your business name in your profile if needed, and try again.`;
+  }
+  return "We found this CAC number, but the registered name does not clearly match your business. NMREP staff will review it. You can also correct your business name in your profile and try again.";
+}
+
 export const maskValue = (value) => "*".repeat(Math.max(0, value.length - 4)) + value.slice(-4);
 
 /** A keyed fingerprint of a number. The same number always gives the same value, and the number cannot be recovered from it. */
@@ -108,7 +137,7 @@ export function ownerView(check) {
     status: check.status,
     maskedValue: check.maskedValue,
     checkedAt: check.checkedAt,
-    message: (check.type === "cac" ? cacMessage : message)[check.status],
+    message: check.type === "cac" && check.status === "Needs review" ? cacReviewMessage(check) : (check.type === "cac" ? cacMessage : message)[check.status],
     // The CAC register is public, so the owner may be told what it shows. This is what to correct when the names differ.
     ...(check.type === "cac" && check.registeredName ? { registeredName: check.registeredName } : {}),
   };
@@ -124,6 +153,7 @@ export function reviewerView(check, duplicates = 0) {
     companyStatus: check.companyStatus,
     reference: check.reference,
     consentAt: check.consentAt,
+    reason: cacReason(check),
     otherBusinessesWithSameNumber: duplicates,
   };
 }
@@ -246,7 +276,7 @@ export async function runCheck({ config, business, user, input }) {
       business,
       user,
       type,
-      reason: type === "nin" ? "a record was found in a name that does not match the account or the owner name." : "the registered name or status does not match the business.",
+      reason: type === "nin" ? "a record was found in a name that does not match the account or the owner name." : cacReason(check).replace(/^./, (c) => c.toLowerCase()),
     });
   }
 

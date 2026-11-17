@@ -3,6 +3,8 @@ import express, { Router } from "express";
 import { z } from "zod";
 import { openTransfer, registrationState, settlePayment, startRegistrationPayment, transferView } from "../lib/payments.js";
 import { validSignature } from "../lib/paystack.js";
+import { subscriptionView, verifyPlayPurchase } from "../lib/play-billing.js";
+import { playVerifySchema } from "../schemas.js";
 import { ApiError } from "../middleware/errors.js";
 import { requireAuth, requireRole } from "../middleware/security.js";
 import { Payment } from "../models/Payment.js";
@@ -26,6 +28,7 @@ export function paymentRoutes({ config }) {
     const open = config.payments.gateway === "alatpay" ? await openTransfer(req.user._id) : null;
     res.json({
       registration: registrationState(user, config),
+      subscription: subscriptionView(user, config),
       // An ALATPay payment the owner can still complete (so a page that was closed can show the account again), or null.
       pending: open ? { gateway: "alatpay", reference: open.reference, years: open.years ?? 1, amount: open.amountKobo / 100, currency: "NGN", transfer: transferView(open) } : null,
       payments: latest.map((p) => p.toJSON()),
@@ -47,7 +50,15 @@ export function paymentRoutes({ config }) {
     if (result.outcome === "not_found") throw new ApiError(404, "not_found", "Not found.");
     // The user object was loaded before the payment was recorded, so read the new state from the database.
     const fresh = await User.findById(req.user._id);
-    res.json({ outcome: result.outcome, registration: registrationState(fresh, config) });
+    res.json({ outcome: result.outcome, registration: registrationState(fresh, config), subscription: subscriptionView(fresh, config) });
+  });
+
+  // The mobile app bought a subscription in Google Play: confirm the purchase with Google and give the account its time.
+  // Safe to repeat (restore). The same purchase cannot belong to two accounts (409).
+  router.post("/play/verify", async (req, res) => {
+    const body = playVerifySchema.parse(req.body);
+    const subscription = await verifyPlayPurchase(config, req.user, body);
+    res.json({ ok: true, subscription });
   });
 
   return router;

@@ -30,6 +30,15 @@ const userSchema = new mongoose.Schema(
     emailVerifiedAt: { type: Date, default: null },
     // The yearly registration fee: the day the paid registration ends. null = never paid.
     registrationPaidUntil: { type: Date, default: null },
+    // Where the current paid time came from: "web" (ALATPay or Paystack), "google_play" or "app_store". Empty = web.
+    subscriptionSource: { type: String, enum: ["", "web", "google_play", "app_store"], default: "" },
+    subscriptionProductId: { type: String, default: "" },
+    subscriptionAutoRenewing: { type: Boolean, default: false },
+    // Optional two-factor sign-in for staff (see lib/two-factor.js). The secret is stored encrypted, never in clear.
+    twoFactorEnabled: { type: Boolean, default: false },
+    twoFactorSecret: { type: String, default: "", select: false },
+    twoFactorLastStep: { type: Number, default: 0, select: false },
+    twoFactorRecovery: { type: [String], default: [], select: false },
     // Whether to email and push notifications. Owners can turn either off; the in-app list always has them.
     emailNotifications: { type: Boolean, default: true },
     pushNotifications: { type: Boolean, default: true },
@@ -48,6 +57,9 @@ const userSchema = new mongoose.Schema(
         delete ret.lockUntil;
         delete ret.createdBy;
         delete ret.phoneKey;
+        delete ret.twoFactorSecret;
+        delete ret.twoFactorLastStep;
+        delete ret.twoFactorRecovery;
         return ret;
       },
     },

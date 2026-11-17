@@ -85,6 +85,17 @@ export function loadConfig(env = process.env) {
         projectId: env.FIREBASE_PROJECT_ID ?? "",
       },
     },
+    // Subscriptions bought in the mobile app through Google Play (see lib/play-billing.js). Off without a service account.
+    googlePlay: {
+      packageName: env.GOOGLE_PLAY_PACKAGE_NAME || "com.onlinebizproj.nmrepmbl",
+      productId: env.GOOGLE_PLAY_PRODUCT_ID || "nmrep_annual",
+      // The Android Publisher service account key: inline JSON, a file path (preferred), or base64. Server only, never in git.
+      serviceAccountJson: env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON ?? "",
+      serviceAccountFile: env.GOOGLE_PLAY_SERVICE_ACCOUNT_FILE ?? "",
+      serviceAccountBase64: env.GOOGLE_PLAY_SERVICE_ACCOUNT_BASE64 ?? "",
+      // If set, Google's notification address must end in ?secret=<this>.
+      rtdnSecret: env.GOOGLE_PLAY_RTDN_SECRET ?? "",
+    },
     notifications: {
       // Signs the "stop these emails" links. Set a long random value on a real server.
       unsubscribeSecret: env.UNSUBSCRIBE_SECRET ?? "",

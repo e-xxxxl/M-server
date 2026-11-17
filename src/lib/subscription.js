@@ -81,6 +81,8 @@ export async function runSubscriptionReminders(config, now = new Date()) {
     role: "msme_owner",
     active: true,
     registrationPaidUntil: mongoose.trusted({ $gt: now, $lte: new Date(now.getTime() + 14 * DAY) }),
+    // A subscription that renews itself through Google Play needs no reminder.
+    subscriptionAutoRenewing: mongoose.trusted({ $ne: true }),
   }).select("registrationPaidUntil");
   let sent = 0;
   for (const owner of owners) {

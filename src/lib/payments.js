@@ -155,6 +155,9 @@ export async function settlePayment(config, reference, { userId = null, now = ne
       // Renewing early adds a year to the end of the current one, so nothing already paid for is lost.
       const base = user.registrationPaidUntil && user.registrationPaidUntil > now ? user.registrationPaidUntil : now;
       user.registrationPaidUntil = new Date(base.getTime() + config.payments.periodDays * DAY * (payment.years ?? 1));
+      user.subscriptionSource = "web";
+      user.subscriptionProductId = "";
+      user.subscriptionAutoRenewing = false;
       await user.save();
       await restoreAfterRenewal(user._id);
       await notify(user._id, {

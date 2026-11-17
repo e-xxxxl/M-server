@@ -12,6 +12,7 @@ import { configurePrembly } from "./lib/prembly.js";
 import { configureAlatpay } from "./lib/alatpay.js";
 import { configurePaystack } from "./lib/paystack.js";
 import { configurePush, push } from "./lib/push.js";
+import { configurePlay, play } from "./lib/play-billing.js";
 import { seedLgas } from "./lib/lgas.js";
 import { applyRenames } from "./lib/renames.js";
 import { isConfigured } from "./lib/gateways.js";
@@ -61,6 +62,9 @@ configurePrembly(config);
 configurePaystack(config);
 configureAlatpay(config);
 configurePush(config);
+configurePlay(config);
+if (!play.enabled) console.log("Google Play subscriptions are switched off (no GOOGLE_PLAY_SERVICE_ACCOUNT_FILE, _JSON or _BASE64). The app cannot confirm Play purchases; website payments are unaffected.");
+else console.log(`Google Play subscriptions are on for ${config.googlePlay.packageName} (${config.googlePlay.productId}).${config.googlePlay.rtdnSecret ? "" : " GOOGLE_PLAY_RTDN_SECRET is not set: the notification address is not protected by a secret."}`);
 if (!config.push.enabled) console.log("Push notifications are switched off (PUSH_ENABLED=false). Owners still get in-app notifications and email.");
 else if (!push.firebase) console.log("Push: Expo push tokens are delivered. Raw Firebase device tokens are not, because no Firebase service account key is set (FIREBASE_SERVICE_ACCOUNT_FILE).");
 if (config.payments.enabled) {

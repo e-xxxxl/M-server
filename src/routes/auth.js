@@ -13,6 +13,8 @@ import { burnPasswordCheck, hashPassword, hashToken, newToken, verifyPassword } 
 import { buildInsights } from "../lib/insights.js";
 import { ApiError } from "../middleware/errors.js";
 import { clearSessionCookie, isAppClient, readSessionToken, requireAuth, setSessionCookie } from "../middleware/security.js";
+import { openSecret, useRecoveryCode, verifyCode } from "../lib/two-factor.js";
+import { subscriptionView } from "../lib/play-billing.js";
 import { forgotPasswordSchema, loginSchema, registerSchema, resetPasswordSchema, unsubscribeSchema, verifyEmailSchema } from "../schemas.js";
 import { registrationState } from "../lib/payments.js";
 import { checkLocation } from "../lib/lgas.js";
@@ -111,11 +113,11 @@ export function authRoutes({ config, limiters }) {
     const extra = await startSession(req, res, user._id);
     const pushTokenSaved = await saveLoginToken(user._id, req.newSessionId, body.devicePushToken);
     await sendVerification(user); // queues the "confirm your email" message, never blocks sign-up on the mail service
-    res.status(201).json({ user, business, insights: buildInsights(business), registration: registrationState(user, config), ...(body.devicePushToken?.trim() ? { pushTokenSaved } : {}), ...extra });
+    res.status(201).json({ user, business, insights: buildInsights(business), registration: registrationState(user, config), subscription: subscriptionView(user, config), ...(body.devicePushToken?.trim() ? { pushTokenSaved } : {}), ...extra });
   });
 
   router.post("/login", limiters.login, async (req, res) => {
-    const { identifier, email, password, devicePushToken } = loginSchema.parse(req.body);
+    const { identifier, email, password, code, devicePushToken } = loginSchema.parse(req.body);
     const given = (identifier ?? email).trim();
     const failure = () =>
       new ApiError(
@@ -127,11 +129,11 @@ export function authRoutes({ config, limiters }) {
     // An email address has an "@". Anything else is read as a phone number, which must belong to exactly one account.
     let user = null;
     if (given.includes("@")) {
-      user = await User.findOne({ email: given.toLowerCase() }).select("+passwordHash +failedLogins +lockUntil");
+      user = await User.findOne({ email: given.toLowerCase() }).select("+passwordHash +failedLogins +lockUntil +twoFactorSecret +twoFactorLastStep +twoFactorRecovery");
     } else {
       const key = phoneKey(given);
       if (key.length >= 7) {
-        const matches = await User.find({ phoneKey: key }).select("+passwordHash +failedLogins +lockUntil").limit(2);
+        const matches = await User.find({ phoneKey: key }).select("+passwordHash +failedLogins +lockUntil +twoFactorSecret +twoFactorLastStep +twoFactorRecovery").limit(2);
         if (matches.length === 1) user = matches[0];
       }
     }
@@ -160,6 +162,26 @@ export function authRoutes({ config, limiters }) {
       throw failure();
     }
 
+    // Staff who switched on two-factor sign-in also need a code. The password was right, so this is the second step: no
+    // session is started until the code is accepted, and a wrong code counts towards the same lock-out as a wrong password.
+    if (user.twoFactorEnabled) {
+      if (!code) throw new ApiError(401, "two_factor_required", "Enter the 6-digit code from your authenticator app.");
+      const secret = openSecret(config, user.twoFactorSecret);
+      const step = secret ? verifyCode(secret, code, { lastStep: user.twoFactorLastStep ?? 0 }) : null;
+      const left = step ? null : useRecoveryCode(user.twoFactorRecovery ?? [], code);
+      if (!step && !left) {
+        user.failedLogins = (user.failedLogins ?? 0) + 1;
+        if (user.failedLogins >= config.lockout.maxFailures) {
+          user.lockUntil = new Date(Date.now() + config.lockout.minutes * 60 * 1000);
+          user.failedLogins = 0;
+        }
+        await user.save();
+        throw new ApiError(401, "invalid_code", "That code is not right, or it was already used. Wait for the next code in your app, or use a recovery code.");
+      }
+      if (step) user.twoFactorLastStep = step;
+      else user.twoFactorRecovery = left;
+    }
+
     user.failedLogins = 0;
     user.lockUntil = null;
     user.lastLoginAt = new Date();
@@ -168,7 +190,7 @@ export function authRoutes({ config, limiters }) {
     const extra = await startSession(req, res, user._id);
     const pushTokenSaved = await saveLoginToken(user._id, req.newSessionId, devicePushToken);
     const business = await Business.findOne({ owner: user._id });
-    res.json({ user, business, insights: business ? buildInsights(business) : null, registration: registrationState(user, config), ...(devicePushToken?.trim() ? { pushTokenSaved } : {}), ...extra });
+    res.json({ user, business, insights: business ? buildInsights(business) : null, registration: registrationState(user, config), subscription: subscriptionView(user, config), ...(devicePushToken?.trim() ? { pushTokenSaved } : {}), ...extra });
   });
 
   // Always the same answer, whether or not the email belongs to an account, so this cannot be used to find out who is registered.
@@ -229,7 +251,7 @@ export function authRoutes({ config, limiters }) {
 
   router.get("/me", requireAuth(config), (req, res) => {
     // For the app, also the session's current expiry (it moves forward while the app is used).
-    res.json({ user: req.user, registration: registrationState(req.user, config), ...(req.tokenExpiresAt ? { tokenExpiresAt: req.tokenExpiresAt } : {}) });
+    res.json({ user: req.user, registration: registrationState(req.user, config), subscription: subscriptionView(req.user, config), ...(req.tokenExpiresAt ? { tokenExpiresAt: req.tokenExpiresAt } : {}) });
   });
 
   // The "Stop these emails" link in a notification email. No sign-in needed: the token proves which account it is for.

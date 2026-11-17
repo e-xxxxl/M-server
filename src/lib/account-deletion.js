@@ -2,6 +2,7 @@ import { documentStorage } from "./document-storage.js";
 import { Application } from "../models/Application.js";
 import { Business } from "../models/Business.js";
 import { ConsentRecord } from "../models/ConsentRecord.js";
+import { PlaySubscription } from "../models/PlaySubscription.js";
 import { Device } from "../models/Device.js";
 import { Document } from "../models/Document.js";
 import { DocumentAccess } from "../models/DocumentAccess.js";
@@ -43,6 +44,7 @@ export async function deleteOwnerData(user, { reason = "Account deleted" } = {})
   await removed("products", () => Product.deleteMany({ owner: user._id }));
 
   await removed("verificationChecks", () => VerificationCheck.deleteMany({ owner: user._id }));
+  await PlaySubscription.deleteMany({ user: user._id });
   await VerificationSubmission.deleteMany({ owner: user._id });
   await Device.deleteMany({ user: user._id });
   await removed("trainingRecords", () => TrainingRecord.deleteMany({ owner: user._id }));

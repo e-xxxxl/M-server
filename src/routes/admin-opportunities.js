@@ -16,7 +16,8 @@ import { Organisation } from "../models/Organisation.js";
 import { User } from "../models/User.js";
 import { ApiError } from "../middleware/errors.js";
 import { requireAuth, requirePasswordChanged, requireRole } from "../middleware/security.js";
-import { idParamSchema } from "../schemas.js";
+import { businessExportQuerySchema, idParamSchema } from "../schemas.js";
+import { lagosRange } from "../lib/date-range.js";
 import { normaliseQuestions } from "../lib/opportunity-form.js";
 import { businessBreakdowns, trainingStats } from "../lib/report-breakdowns.js";
 import { Payment } from "../models/Payment.js";
@@ -326,9 +327,23 @@ export function adminOpportunityRoutes({ config }) {
   };
 
   router.get("/export/businesses", async (req, res) => {
-    const businesses = await Business.find({}).sort({ createdAt: -1 }).limit(20000).lean();
+    const f = businessExportQuerySchema.parse(req.query);
+    const match = {};
+    if (f.state) match.state = f.state;
+    if (f.lga) match.lga = f.lga;
+    if (f.sector) match.sector = f.sector;
+    if (f.businessType) match.businessType = f.businessType;
+    if (f.status) match.verificationStatus = f.status;
+    const created = lagosRange(f);
+    if (created) match.createdAt = created;
+    if (f.fee) {
+      // Paid = the owner's paid registration has not ended; unpaid = everyone else.
+      const paidOwners = await User.distinct("_id", { role: "msme_owner", registrationPaidUntil: mongoose.trusted({ $gt: new Date() }) });
+      match.owner = mongoose.trusted(f.fee === "paid" ? { $in: paidOwners } : { $nin: paidOwners });
+    }
+    const businesses = await Business.find(match).sort({ createdAt: -1 }).limit(20000).lean();
     const owners = new Map(
-      (await User.find({ _id: mongoose.trusted({ $in: businesses.map((b) => b.owner) }) }).select("fullName email phone").lean()).map((u) => [String(u._id), u]),
+      (await User.find({ _id: mongoose.trusted({ $in: businesses.map((b) => b.owner) }) }).select("fullName email phone registrationPaidUntil").lean()).map((u) => [String(u._id), u]),
     );
     const agentIds = [...new Set(businesses.map((b) => b.referral?.agent).filter(Boolean).map(String))];
     const agents = new Map((await Agent.find({ _id: mongoose.trusted({ $in: agentIds }) }).select("fullName").lean()).map((a) => [String(a._id), a.fullName]));
@@ -346,13 +361,15 @@ export function adminOpportunityRoutes({ config }) {
         { header: "Owner", value: (b) => owners.get(String(b.owner))?.fullName ?? "" },
         { header: "Owner email", value: (b) => owners.get(String(b.owner))?.email ?? "" },
         { header: "Owner phone", value: (b) => owners.get(String(b.owner))?.phone ?? "" },
+        { header: "Fee paid until", value: (b) => owners.get(String(b.owner))?.registrationPaidUntil ?? "" },
         { header: "Referral code", value: (b) => b.referral?.code ?? "" },
         { header: "Referred by", value: (b) => agents.get(String(b.referral?.agent)) ?? "" },
         { header: "Registered", value: (b) => b.createdAt },
       ],
       businesses,
     );
-    await audit(req.user, "export.businesses", `Exported ${businesses.length} businesses to CSV`, { type: "export" });
+    const used = Object.entries(f).filter(([, v]) => v).map(([k, v]) => `${k}=${v}`).join(", ");
+    await audit(req.user, "export.businesses", `Exported ${businesses.length} businesses to CSV${used ? ` (${used})` : ""}`, { type: "export" });
     sendCsv(res, "nmrep-businesses.csv", csv);
   });
 
