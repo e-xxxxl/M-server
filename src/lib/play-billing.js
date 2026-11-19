@@ -204,10 +204,25 @@ async function apply(config, record, result, { announce = false } = {}) {
 
 // ------------------------------------------------------------------ the endpoints' work
 
-/** POST /api/payments/play/verify. Returns the account's subscription (the same object as on /api/auth/me). */
-export async function verifyPlayPurchase(config, user, { productId, purchaseToken, packageName }) {
+/**
+ * POST /api/payments/play/verify. Returns the account's subscription (the same object as on /api/auth/me). Every attempt
+ * leaves one line in the server log with the account id and the outcome (never the purchase token), so a failed purchase
+ * can be traced.
+ */
+export async function verifyPlayPurchase(config, user, body) {
+  try {
+    const subscription = await verifyPlayPurchaseInner(config, user, body);
+    console.log(`Google Play verify: accepted for account ${user._id}.`);
+    return subscription;
+  } catch (err) {
+    console.log(`Google Play verify: refused for account ${user._id}: ${err?.code ?? err?.name ?? "error"}.`);
+    throw err;
+  }
+}
+
+async function verifyPlayPurchaseInner(config, user, { productId, purchaseToken, packageName }) {
   const cfg = config.googlePlay;
-  if (!play.enabled) throw new ApiError(503, "play_unavailable", "Google Play purchases cannot be confirmed right now. Please try again later.");
+  if (!play.enabled) throw new ApiError(503, "play_not_configured", "Google Play subscriptions are not set up on this server yet.");
   const invalid = () => new ApiError(422, "invalid_purchase", "This purchase could not be confirmed.");
   if (packageName !== cfg.packageName || productId !== cfg.productId) throw invalid();
 

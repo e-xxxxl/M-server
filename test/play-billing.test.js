@@ -184,7 +184,7 @@ describe("POST /api/payments/play/verify", () => {
     setPlay(null);
     const off = await verify(o, { purchaseToken: "token-down".padEnd(30, "d") });
     assert.equal(off.status, 503);
-    assert.equal(off.json.error.code, "play_unavailable");
+    assert.equal(off.json.error.code, "play_not_configured");
     assert.equal((await call("GET", "/api/opportunities", { cookie: o.cookie })).status, 402);
   });
 
