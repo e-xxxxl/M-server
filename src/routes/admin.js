@@ -52,6 +52,9 @@ const ownerSummary = (user) =>
         active: user.active !== false,
         // The end of the paid registration year. null = never paid (or the fee is off).
         registrationPaidUntil: user.registrationPaidUntil ?? null,
+        // Where the paid time came from: "web" (website payment) or "google_play" (bought in the app). Empty if never paid.
+        paidVia: user.registrationPaidUntil ? user.subscriptionSource || "web" : "",
+        paidAutoRenewing: user.subscriptionSource === "google_play" ? Boolean(user.subscriptionAutoRenewing) : null,
       }
     : null;
 
@@ -161,6 +164,7 @@ export function adminRoutes({ config }) {
                 email: "$ownerUser.email",
                 accountActive: { $ne: ["$ownerUser.active", false] },
                 registrationPaidUntil: "$ownerUser.registrationPaidUntil",
+                paidVia: "$ownerUser.subscriptionSource",
                 state: 1,
                 sector: 1,
                 verificationStatus: 1,
@@ -176,6 +180,7 @@ export function adminRoutes({ config }) {
     );
 
     const [result] = await Business.aggregate(pipeline);
+    for (const item of result.items) item.paidVia = item.registrationPaidUntil ? item.paidVia || "web" : "";
     res.json({ items: result.items, total: result.total[0]?.n ?? 0, page, pageSize: PAGE_SIZE });
   });
 

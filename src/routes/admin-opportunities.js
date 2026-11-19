@@ -21,6 +21,7 @@ import { lagosRange } from "../lib/date-range.js";
 import { normaliseQuestions } from "../lib/opportunity-form.js";
 import { businessBreakdowns, trainingStats } from "../lib/report-breakdowns.js";
 import { Payment } from "../models/Payment.js";
+import { PlaySubscription } from "../models/PlaySubscription.js";
 import { trainingStaffRoutes } from "./training.js";
 import {
   applicationListQuerySchema,
@@ -315,7 +316,16 @@ export function adminOpportunityRoutes({ config }) {
       training: await trainingStats(),
       registrationFees: await (async () => {
         const [row] = await Payment.aggregate([{ $match: { status: "success" } }, { $group: { _id: null, payments: { $sum: 1 }, kobo: { $sum: "$amountKobo" } } }]);
-        return { payments: row?.payments ?? 0, totalNaira: (row?.kobo ?? 0) / 100 };
+        // Website payments (ALATPay, Paystack) and subscriptions bought in the app (Google Play) are counted apart. The Play
+        // amount is Google's list price before tax and before Google's share; the Play Console has the real payout.
+        const play = await PlaySubscription.find({ entitled: true }).select("priceAmount priceCurrency").lean();
+        const playNaira = play.filter((p) => (p.priceCurrency || "NGN") === "NGN" && Number.isFinite(p.priceAmount)).reduce((n, p) => n + p.priceAmount, 0);
+        return {
+          payments: row?.payments ?? 0,
+          totalNaira: (row?.kobo ?? 0) / 100,
+          web: { payments: row?.payments ?? 0, totalNaira: (row?.kobo ?? 0) / 100 },
+          googlePlay: { subscriptions: play.length, totalNaira: playNaira },
+        };
       })(),
     });
   });

@@ -392,6 +392,44 @@ describe('the admin Payments page shows Play subscriptions', () => {
   });
 });
 
+describe("the admin side tells app payments from website payments", () => {
+  it("labels the business, the detail page, the verification list and the reports, and says an ID needs the NIN check", async () => {
+    const boss = await createStaff({ role: "super_admin" });
+    const cookie = (await logIn(call, boss.email, boss.password)).cookie;
+    const app = await owner();
+    const web = await owner();
+    const unpaid = await owner();
+    const token = "token-labels".padEnd(30, "l");
+    grant(token, { orderId: "GPA.7777", priceAmount: 1000, priceCurrency: "NGN" });
+    assert.equal((await verify(app, { purchaseToken: token })).status, 200);
+    await User.updateOne({ _id: web.id }, { registrationPaidUntil: new Date(Date.now() + 100 * DAY), subscriptionSource: "web" });
+
+    const list = await call("GET", "/api/admin/businesses", { cookie });
+    const by = (o) => list.json.items.find((i) => i.id === o.registered.business.id);
+    assert.equal(by(app).paidVia, "google_play");
+    assert.equal(by(web).paidVia, "web");
+    assert.equal(by(unpaid).paidVia, "");
+
+    const detail = await call("GET", `/api/admin/businesses/${app.registered.business.id}`, { cookie });
+    assert.equal(detail.json.owner.paidVia, "google_play");
+    assert.equal(detail.json.owner.paidAutoRenewing, true);
+    assert.equal(detail.json.business.nmrepId, null, "paying does not issue the ID: the NIN check does");
+    assert.equal((await call("GET", `/api/admin/businesses/${web.registered.business.id}`, { cookie })).json.owner.paidVia, "web");
+
+    const queue = await call("GET", "/api/admin/verifications?status=all", { cookie });
+    assert.equal(queue.json.items.find((i) => i.id === app.registered.business.id).paidVia, "google_play");
+
+    const reports = await call("GET", "/api/admin/reports", { cookie });
+    assert.ok(reports.json.registrationFees.googlePlay.subscriptions >= 1);
+    assert.ok(reports.json.registrationFees.googlePlay.totalNaira >= 1000);
+    assert.ok(reports.json.registrationFees.web);
+
+    const note = await Notification.findOne({ user: app.id, title: "Subscription active" });
+    assert.match(note.body, /verify your NIN/i);
+    assert.match(note.body, /Business ID/);
+  });
+});
+
 describe("the subscription view", () => {
   it("is always active while the fee is not being charged, with no source", () => {
     const view = subscriptionView({ registrationPaidUntil: null }, { payments: { enabled: false }, googlePlay: { productId: PRODUCT } });

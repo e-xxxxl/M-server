@@ -191,7 +191,7 @@ async function apply(config, record, result, { announce = false } = {}) {
       await notify(user._id, {
         type: "payment",
         title: "Subscription active",
-        body: `Thank you. Your NMREP subscription through Google Play is active until ${e.until.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Lagos" })}.`,
+        body: `Thank you. Your NMREP subscription through Google Play is active until ${e.until.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Lagos" })}. Next, verify your NIN from the Verification page to receive your NMREP Business ID.`,
         link: "/dashboard/",
       });
       alertPlaySubscribed(config, { business: await Business.findOne({ owner: user._id }).select("businessName"), user, expiresAt: e.until });

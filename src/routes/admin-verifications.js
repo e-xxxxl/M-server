@@ -40,7 +40,7 @@ export function adminVerificationRoutes({ config }) {
     const [checks, submissions, owners] = await Promise.all([
       VerificationCheck.find({ business: mongoose.trusted({ $in: ids }), type: mongoose.trusted({ $in: checkTypes }) }).sort({ checkedAt: -1 }),
       VerificationSubmission.find({ business: mongoose.trusted({ $in: ids }) }).lean(),
-      User.find({ _id: mongoose.trusted({ $in: businesses.map((b) => b.owner) }) }).select("fullName email phone registrationPaidUntil emailVerifiedAt active lastLoginAt").lean(),
+      User.find({ _id: mongoose.trusted({ $in: businesses.map((b) => b.owner) }) }).select("fullName email phone registrationPaidUntil subscriptionSource emailVerifiedAt active lastLoginAt").lean(),
     ]);
     const latest = new Map();
     for (const c of checks) {
@@ -69,6 +69,7 @@ export function adminVerificationRoutes({ config }) {
         ownerEmail: owner?.email ?? "",
         ownerPhone: owner?.phone ?? "",
         registrationPaidUntil: owner?.registrationPaidUntil ?? null,
+        paidVia: owner?.registrationPaidUntil ? owner.subscriptionSource || "web" : "",
         emailVerified: Boolean(owner?.emailVerifiedAt),
         accountActive: owner?.active !== false,
         lastLoginAt: owner?.lastLoginAt ?? null,
