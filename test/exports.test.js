@@ -105,7 +105,7 @@ describe("the payments export and time range", () => {
     assert.equal(res.status, 200);
     assert.match(res.headers.get("content-type"), /text\/csv/);
     assert.ok(res.text.includes("Lagos Textile Co") && res.text.includes("Lagos Food Co") && !res.text.includes("Kano Farm Co"));
-    assert.match(res.text.split("\r\n")[0], /Amount \(naira\)/);
+    assert.match(res.text.split("\r\n")[0], /"Amount","Currency"/);
     assert.equal((await call("GET", "/api/admin/payments/export.csv", { cookie: adminCookie })).status, 403);
     assert.equal((await call("GET", "/api/admin/payments/export.csv?from=2026-13-01", { cookie: superCookie })).status, 422);
   });

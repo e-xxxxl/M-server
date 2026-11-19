@@ -78,6 +78,9 @@ export function createPlayClient(cfg, { fetchImpl = fetch, log = console, now = 
         basePlanId: String(line.offerDetails?.basePlanId ?? ""),
         expiresAt: line.expiryTime ? new Date(line.expiryTime) : null,
         autoRenewing: Boolean(line.autoRenewingPlan?.autoRenewEnabled),
+        // Money: whole units as text plus nanos, for example { currencyCode: "NGN", units: "1000", nanos: 0 }.
+        priceAmount: line.autoRenewingPlan?.recurringPrice ? Number(line.autoRenewingPlan.recurringPrice.units ?? 0) + Number(line.autoRenewingPlan.recurringPrice.nanos ?? 0) / 1e9 : null,
+        priceCurrency: String(line.autoRenewingPlan?.recurringPrice?.currencyCode ?? ""),
         acknowledged: d.acknowledgementState === "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED",
         orderId: String(d.latestOrderId ?? ""),
       };
@@ -172,6 +175,10 @@ async function apply(config, record, result, { announce = false } = {}) {
   record.orderId = result.orderId || record.orderId;
   record.expiresAt = result.expiresAt ?? record.expiresAt;
   record.autoRenewing = result.autoRenewing;
+  if (Number.isFinite(result.priceAmount)) {
+    record.priceAmount = result.priceAmount;
+    record.priceCurrency = result.priceCurrency;
+  }
   record.entitled = e.active;
   record.lastCheckedAt = new Date();
   await record.save();

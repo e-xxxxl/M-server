@@ -892,3 +892,5 @@ The app sells the yearly subscription (product `nmrep_annual`, base plan `yearly
 4. **Test** with a license tester account in the Play Console: buy in the app, and the account becomes active (the app then shows no paywall and the website shows the account as paid).
 
 If the key is missing the app cannot confirm purchases (503 `play_unavailable`); website payments are unaffected. Apple (App Store) purchases are not built yet.
+
+**Tracking what was bought in the app.** The super admin's Payments page lists Play subscriptions with the website payments (filter by time range, download as a spreadsheet). The amount shown is Google's list price for the plan before tax and before Google's share. For the money that is actually paid out use the Play Console (Reports, Financial reports and Subscriptions).

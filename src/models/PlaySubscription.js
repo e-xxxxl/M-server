@@ -16,6 +16,9 @@ const playSubscriptionSchema = new mongoose.Schema(
     state: { type: String, default: "" },
     expiresAt: { type: Date, default: null },
     autoRenewing: { type: Boolean, default: false },
+    // The current recurring price Google reports (before tax and before Google's share), when it reports one.
+    priceAmount: { type: Number, default: null },
+    priceCurrency: { type: String, default: "" },
     // Whether this purchase currently gives access.
     entitled: { type: Boolean, default: false },
     lastCheckedAt: { type: Date, default: null },

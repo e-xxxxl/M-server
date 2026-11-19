@@ -341,6 +341,57 @@ describe("the Google Play client", () => {
   });
 });
 
+
+describe('the admin Payments page shows Play subscriptions', () => {
+  it('lists them with the price Google reports, totals them apart from website payments, and never shows the token', async () => {
+    const boss = await createStaff({ role: 'super_admin' });
+    const cookie = (await logIn(call, boss.email, boss.password)).cookie;
+    const o = await owner();
+    const token = 'token-admin-list'.padEnd(30, 'z');
+    grant(token, { orderId: 'GPA.3333-4444', priceAmount: 1000, priceCurrency: 'NGN' });
+    assert.equal((await verify(o, { purchaseToken: token })).status, 200);
+
+    const list = await call('GET', '/api/admin/payments?status=all', { cookie });
+    assert.equal(list.status, 200);
+    const row = list.json.items.find((i) => i.provider === 'google_play' && i.reference === 'GPA.3333-4444');
+    assert.ok(row, JSON.stringify(list.json.items.map((i) => i.provider)));
+    assert.equal(row.amount, 1000);
+    assert.equal(row.currency, 'NGN');
+    assert.equal(row.status, 'success');
+    assert.equal(row.autoRenewing, true);
+    assert.ok(row.expiresAt);
+    assert.ok(row.businessName);
+    assert.ok(list.json.totals.play.active >= 1);
+    assert.ok(list.json.totals.play.estimatedNaira >= 1000);
+    assert.ok(!JSON.stringify(list.json).includes(token), 'the purchase token never appears');
+
+    const onlyPlay = await call('GET', '/api/admin/payments?provider=google_play', { cookie });
+    assert.ok(onlyPlay.json.items.length >= 1 && onlyPlay.json.items.every((i) => i.provider === 'google_play'));
+    assert.equal((await call('GET', '/api/admin/payments?provider=paystack&status=all', { cookie })).json.items.some((i) => i.provider === 'google_play'), false);
+
+    const csv = await call('GET', '/api/admin/payments/export.csv?provider=google_play', { cookie });
+    assert.equal(csv.status, 200);
+    assert.ok(csv.text.includes('GPA.3333-4444') && csv.text.includes('google_play'));
+    assert.ok(!csv.text.includes(token));
+
+    // An ended subscription is listed as Ended (failed), not counted as active.
+    grant(token, { orderId: 'GPA.3333-4444', state: 'SUBSCRIPTION_STATE_EXPIRED', expiresAt: new Date(Date.now() - 1000), priceAmount: 1000, priceCurrency: 'NGN' });
+    assert.equal((await notification(token)).status, 200);
+    const ended = await call('GET', '/api/admin/payments?status=failed&provider=google_play', { cookie });
+    assert.ok(ended.json.items.some((i) => i.reference === 'GPA.3333-4444'));
+    assert.equal((await call('GET', '/api/admin/payments?status=success&provider=google_play', { cookie })).json.items.some((i) => i.reference === 'GPA.3333-4444'), false);
+  });
+
+  it('keeps the price Google reports, and tolerates a purchase with no price', async () => {
+    const o = await owner();
+    const token = 'token-no-price'.padEnd(30, 'y');
+    grant(token, { orderId: 'GPA.5555-6666' });
+    assert.equal((await verify(o, { purchaseToken: token })).status, 200);
+    const record = await PlaySubscription.findOne({ purchaseToken: token });
+    assert.equal(record.priceAmount, null);
+  });
+});
+
 describe("the subscription view", () => {
   it("is always active while the fee is not being charged, with no source", () => {
     const view = subscriptionView({ registrationPaidUntil: null }, { payments: { enabled: false }, googlePlay: { productId: PRODUCT } });

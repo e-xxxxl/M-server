@@ -11,3 +11,7 @@ npm-debug.log*
 
 # Local document wallet files (encrypted, but still never commit them)
 /storage
+
+# Google service account keys belong on the server only, never in git.
+*service-account*.json
+*serviceAccount*.json

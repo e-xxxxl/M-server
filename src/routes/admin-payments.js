@@ -6,6 +6,7 @@ import mongoose from "mongoose";
 import { z } from "zod";
 import { requireAuth, requirePasswordChanged, requireRole } from "../middleware/security.js";
 import { Business } from "../models/Business.js";
+import { PlaySubscription } from "../models/PlaySubscription.js";
 import { Payment, paymentStatuses } from "../models/Payment.js";
 import { User } from "../models/User.js";
 
@@ -20,7 +21,7 @@ const day = z.preprocess(
 const querySchema = z
   .object({
     status: z.enum([...paymentStatuses, "all"]).default("success"),
-    provider: z.enum(["paystack", "alatpay", "all"]).default("all"),
+    provider: z.enum(["paystack", "alatpay", "google_play", "all"]).default("all"),
     // A time range in Nigerian days: the day a payment was made (or, if it never was, started).
     from: day,
     to: day,
@@ -39,6 +40,36 @@ function filterOf({ status, provider, from, to }) {
 }
 
 /**
+ * Google Play subscriptions as payment-shaped rows, so the list and the spreadsheet can show them beside the website
+ * payments. Active means "Paid", ended means "Failed" (the screen words them Active and Ended). The date is the day the
+ * purchase was first confirmed. The amount is Google's recurring price when Google reports one, before tax and before
+ * Google's share; the Play Console is the record of what is really paid out. The purchase token is never part of a row.
+ */
+async function playRows({ status, provider, from, to }, limit) {
+  if (!["all", "google_play"].includes(provider) || status === "pending") return [];
+  const match = {};
+  if (status === "success") match.entitled = true;
+  if (status === "failed") match.entitled = false;
+  const range = lagosRange({ from, to });
+  if (range) match.createdAt = range;
+  const rows = await PlaySubscription.find(match).sort({ createdAt: -1 }).limit(limit).lean();
+  return rows.map((r) => ({
+    _id: r._id,
+    user: r.user,
+    reference: r.orderId || "Google Play",
+    provider: "google_play",
+    amountKobo: r.priceAmount === null || r.priceAmount === undefined ? null : Math.round(r.priceAmount * 100),
+    currency: r.priceCurrency || "NGN",
+    years: 1,
+    status: r.entitled ? "success" : "failed",
+    paidAt: r.createdAt,
+    createdAt: r.createdAt,
+    expiresAt: r.expiresAt,
+    autoRenewing: r.autoRenewing,
+  }));
+}
+
+/**
  * Registration fee payments, for the super admin: who paid, how much, through which gateway and when, with a link to
  * the business. Card and bank details never reach NMREP, so none exist here.
  */
@@ -52,10 +83,13 @@ export function adminPaymentRoutes({ config }) {
 
     // The totals follow the time range (and the gateway), whichever status tab is open.
     const totalsMatch = filterOf({ ...q, status: "all" }).match;
-    const [rows, totals] = await Promise.all([
-      Payment.find(match).sort({ paidAt: -1, createdAt: -1 }).limit(300).lean(),
-      Payment.aggregate([{ $match: totalsMatch }, { $group: { _id: "$status", count: { $sum: 1 }, kobo: { $sum: "$amountKobo" } } }]),
+    const webRows = q.provider === "google_play" ? [] : await Payment.find(match).sort({ paidAt: -1, createdAt: -1 }).limit(300).lean();
+    const [totals, playAll] = await Promise.all([
+      q.provider === "google_play" ? [] : Payment.aggregate([{ $match: totalsMatch }, { $group: { _id: "$status", count: { $sum: 1 }, kobo: { $sum: "$amountKobo" } } }]),
+      playRows({ ...q, status: "all", provider: "all" }, 5000),
     ]);
+    const playShown = await playRows(q, 300);
+    const rows = [...webRows, ...playShown].sort((a, b) => new Date(b.paidAt ?? b.createdAt) - new Date(a.paidAt ?? a.createdAt)).slice(0, 300);
     const ids = rows.map((p) => p.user);
     const [users, businesses] = await Promise.all([
       User.find({ _id: mongoose.trusted({ $in: ids }) }).select("fullName email").lean(),
@@ -71,6 +105,13 @@ export function adminPaymentRoutes({ config }) {
         collectedNaira: sum("success").kobo / 100,
         pending: sum("pending").count,
         failed: sum("failed").count,
+        // Subscriptions bought in the app through Google Play. "Estimated" adds up Google's reported recurring price for the
+        // active ones (naira only); the Play Console has the real amounts after tax and Google's share.
+        play: {
+          active: playAll.filter((p) => p.status === "success").length,
+          ended: playAll.filter((p) => p.status === "failed").length,
+          estimatedNaira: playAll.filter((p) => p.status === "success" && p.currency === "NGN" && p.amountKobo !== null).reduce((n, p) => n + p.amountKobo / 100, 0),
+        },
       },
       items: rows.map((p) => {
         const user = userOf.get(String(p.user));
@@ -79,8 +120,9 @@ export function adminPaymentRoutes({ config }) {
           id: String(p._id),
           reference: p.reference,
           provider: p.provider ?? "paystack",
-          amount: p.amountKobo / 100,
+          amount: p.amountKobo === null ? null : p.amountKobo / 100,
           years: p.years ?? 1,
+          ...(p.provider === "google_play" ? { expiresAt: p.expiresAt ?? null, autoRenewing: Boolean(p.autoRenewing) } : {}),
           currency: p.currency,
           status: p.status,
           paidAt: p.paidAt,
@@ -99,7 +141,8 @@ export function adminPaymentRoutes({ config }) {
   router.get("/export.csv", async (req, res) => {
     const q = querySchema.parse(req.query);
     const { match } = filterOf(q);
-    const rows = await Payment.find(match).sort({ paidAt: -1, createdAt: -1 }).limit(20000).lean();
+    const web = q.provider === "google_play" ? [] : await Payment.find(match).sort({ paidAt: -1, createdAt: -1 }).limit(20000).lean();
+    const rows = [...web, ...(await playRows(q, 20000))].sort((a, b) => new Date(b.paidAt ?? b.createdAt) - new Date(a.paidAt ?? a.createdAt));
     const ids = rows.map((p) => p.user);
     const [users, businesses] = await Promise.all([
       User.find({ _id: mongoose.trusted({ $in: ids }) }).select("fullName email phone").lean(),
@@ -114,7 +157,8 @@ export function adminPaymentRoutes({ config }) {
         { header: "Gateway", value: (p) => p.provider ?? "paystack" },
         { header: "Reference", value: (p) => p.reference },
         { header: "Years", value: (p) => p.years ?? 1 },
-        { header: "Amount (naira)", value: (p) => p.amountKobo / 100 },
+        { header: "Amount", value: (p) => (p.amountKobo === null ? "" : p.amountKobo / 100) },
+        { header: "Currency", value: (p) => p.currency ?? "NGN" },
         { header: "Business", value: (p) => businessOf.get(String(p.user))?.businessName ?? "" },
         { header: "NMREP ID", value: (p) => businessOf.get(String(p.user))?.nmrepId ?? "" },
         { header: "State", value: (p) => businessOf.get(String(p.user))?.state ?? "" },
