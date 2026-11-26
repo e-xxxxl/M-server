@@ -100,13 +100,14 @@ describe("the payments export and time range", () => {
     assert.equal(waiting.items.length, 1);
   });
 
-  it("downloads the whole range as a spreadsheet with the business and owner, and is for the super admin only", async () => {
+  it("downloads the whole range as a spreadsheet with the business and owner, and is for staff only", async () => {
     const res = await call("GET", "/api/admin/payments/export.csv?from=2026-03-01&to=2026-03-31", { cookie: superCookie });
     assert.equal(res.status, 200);
     assert.match(res.headers.get("content-type"), /text\/csv/);
     assert.ok(res.text.includes("Lagos Textile Co") && res.text.includes("Lagos Food Co") && !res.text.includes("Kano Farm Co"));
     assert.match(res.text.split("\r\n")[0], /"Amount","Currency"/);
-    assert.equal((await call("GET", "/api/admin/payments/export.csv", { cookie: adminCookie })).status, 403);
+    assert.equal((await call("GET", "/api/admin/payments/export.csv", { cookie: adminCookie })).status, 200, "an administrator can download it too");
+    assert.equal((await call("GET", "/api/admin/payments/export.csv")).status, 401);
     assert.equal((await call("GET", "/api/admin/payments/export.csv?from=2026-13-01", { cookie: superCookie })).status, 422);
   });
 });

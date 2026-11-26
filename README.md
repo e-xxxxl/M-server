@@ -22,10 +22,10 @@ Check it works: open http://localhost:4000/api/health. You should see `{"status"
 | `MONGODB_URI` | Required. Connection string. A secret: keep it in `.env` or the host's settings, never in git. |
 | `PORT` | Port to listen on. Default 4000. |
 | `NODE_ENV` | `production` on the live server. Makes cookies HTTPS-only. |
-| `CORS_ORIGINS` | Websites allowed to call the API, comma separated, no trailing slash. Production: `https://nmrep.ng`. |
+| `CORS_ORIGINS` | Websites allowed to call the API, comma separated, no trailing slash. Production: `https://nmrep.org`. |
 | `TRUST_PROXY` | Number of proxies in front of the API. Default 1 in production (Render). |
 | `SESSION_TTL_DAYS` | Login length. Default 7. |
-| `COOKIE_SAMESITE`, `COOKIE_DOMAIN` | Leave unset when the site is `nmrep.ng` and the API is `api.nmrep.ng`. |
+| `COOKIE_SAMESITE`, `COOKIE_DOMAIN` | Leave unset when the site is `nmrep.org` and the API is `api.nmrep.org`. |
 | `HOST` | Address to listen on. Default all addresses (Render). On the VPS use `127.0.0.1` so only nginx can reach the API. |
 | `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO` | Email through Resend. Both the key and the sender are needed, otherwise email is off (everything else still works). The sender's domain must be verified in Resend. The key is a secret: only in the real `.env`. |
 | `APP_URL` | The website's address, for the links in emails. No trailing slash. |
@@ -48,10 +48,10 @@ The single source of truth is `docs/api/` at the root of the repository: start w
 ## Deploying on Render
 
 1. Create a Web Service from this repository with the root directory set to `backend`. Build command `npm install`, start command `npm start`.
-2. Set the environment variables above (`MONGODB_URI`, `NODE_ENV=production`, `CORS_ORIGINS=https://nmrep.ng`).
+2. Set the environment variables above (`MONGODB_URI`, `NODE_ENV=production`, `CORS_ORIGINS=https://nmrep.org`).
 3. In MongoDB Atlas allow the host's outgoing addresses in Network Access.
-4. Attach the custom domain `api.nmrep.ng` to the service and point a CNAME to it. **Use a subdomain of nmrep.ng.** The login cookie is `SameSite=Lax`, which browsers send between `nmrep.ng` and `api.nmrep.ng` (same site) but not between unrelated domains such as `onrender.com` and `nmrep.ng`.
-5. Rebuild the website with `NEXT_PUBLIC_API_URL=https://api.nmrep.ng` (this is already the production default) and upload it.
+4. Attach the custom domain `api.nmrep.org` to the service and point a CNAME to it. **Use a subdomain of nmrep.org.** The login cookie is `SameSite=Lax`, which browsers send between `nmrep.org` and `api.nmrep.org` (same site) but not between unrelated domains such as `onrender.com` and `nmrep.org`.
+5. Rebuild the website with `NEXT_PUBLIC_API_URL=https://api.nmrep.org` (this is already the production default) and upload it.
 
 ## First super admin
 

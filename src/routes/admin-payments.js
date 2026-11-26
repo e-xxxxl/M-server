@@ -70,12 +70,12 @@ async function playRows({ status, provider, from, to }, limit) {
 }
 
 /**
- * Registration fee payments, for the super admin: who paid, how much, through which gateway and when, with a link to
+ * Registration fee payments, for administrators and the super admin: who paid, how much, through which gateway and when, with a link to
  * the business. Card and bank details never reach NMREP, so none exist here.
  */
 export function adminPaymentRoutes({ config }) {
   const router = Router();
-  router.use(requireAuth(config), requireRole("super_admin"), requirePasswordChanged);
+  router.use(requireAuth(config), requireRole("admin", "super_admin"), requirePasswordChanged);
 
   router.get("/", async (req, res) => {
     const q = querySchema.parse(req.query);

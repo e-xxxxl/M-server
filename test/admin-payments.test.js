@@ -64,9 +64,13 @@ describe("registration fee payments (super admin)", () => {
     assert.equal((await call("GET", "/api/admin/payments?status=weird", { cookie: superCookie })).status, 422);
   });
 
-  it("is for the super admin only", async () => {
+  it("is for administrators and the super admin, and for nobody else", async () => {
     assert.equal((await call("GET", "/api/admin/payments")).status, 401);
-    assert.equal((await call("GET", "/api/admin/payments", { cookie: adminCookie })).status, 403);
+    assert.equal((await call("GET", "/api/admin/payments", { cookie: adminCookie })).status, 200);
+    assert.equal((await call("GET", "/api/admin/payments", { cookie: superCookie })).status, 200);
+    const body = registrationBody();
+    const registered = await call("POST", "/api/auth/register", { body });
+    assert.equal((await call("GET", "/api/admin/payments", { cookie: registered.cookie })).status, 403, "a business owner cannot");
   });
 });
 

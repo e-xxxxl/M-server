@@ -34,7 +34,7 @@ ${button ? `<p style="margin:26px 0"><a href="${esc(button.url)}" style="backgro
 <p style="margin:24px 0 0;padding-top:18px;border-top:1px solid #e4e8e5;font-size:13px;line-height:1.5;color:#5c5c5c">${esc(footer ?? "You received this email because of activity on your NMREP account.")}${unsubscribeUrl ? ` <a href="${esc(unsubscribeUrl)}" style="color:#5c5c5c;text-decoration:underline">Stop these emails</a>.` : ""}</p>
 </td></tr>
 <tr><td style="background:#0f5e30;border-radius:0 0 12px 12px;padding:16px 32px;font-family:${FONT};font-size:12px;line-height:1.5;color:#dcebe1">
-NMREP &middot; Digital business platform for Nigerian MSMEs &middot; <a href="${esc(site)}" style="color:#ffffff;text-decoration:underline">nmrep.ng</a>
+NMREP &middot; Digital business platform for Nigerian MSMEs &middot; <a href="${esc(site)}" style="color:#ffffff;text-decoration:underline">nmrep.org</a>
 </td></tr></table></td></tr></table></body></html>`;
   return { text, html };
 }

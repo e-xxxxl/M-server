@@ -6,7 +6,7 @@ You will end up with this:
 
 ```
 Visitor's browser or the app
-        |  HTTPS (https://api.nmrep.ng)
+        |  HTTPS (https://api.nmrep.org)
         v
      nginx  (ports 80 and 443, the only thing open to the internet)
         |  http://127.0.0.1:4000  (this machine only)
@@ -30,7 +30,7 @@ Set aside about 2 hours the first time. Do the steps in order. Every command is 
 | Need | Notes |
 |---|---|
 | The server's address and root login | `ssh root@169.58.49.146` |
-| Control of the DNS records of `nmrep.ng` | Where the domain is managed (often the cPanel "Zone Editor" of your current hosting, or your registrar). You need it for the API address and for Resend. |
+| Control of the DNS records of `nmrep.org` | Where the domain is managed (often the cPanel "Zone Editor" of your current hosting, or your registrar). You need it for the API address and for Resend. |
 | A password manager | You will create about 6 passwords. Never store them in a file on the server or in a chat. |
 | A Resend account | Free at resend.com. Used in section 10. |
 | An email address you can read | For the HTTPS certificate notices and the test email. |
@@ -51,27 +51,27 @@ grep -m1 -o avx /proc/cpuinfo          # MongoDB 5 and newer needs the "avx" CPU
 
 ---
 
-## 1. Point `api.nmrep.ng` at the server (DNS)
+## 1. Point `api.nmrep.org` at the server (DNS)
 
 Do this first, because DNS can take a while to spread.
 
-In the DNS settings of `nmrep.ng`, add one record:
+In the DNS settings of `nmrep.org`, add one record:
 
 | Type | Name / Host | Value | TTL |
 |---|---|---|---|
 | A | `api` | `169.58.49.146` | 300 (5 minutes) or the lowest allowed |
 
-Leave `nmrep.ng` and `www` alone: they stay on your shared hosting.
+Leave `nmrep.org` and `www` alone: they stay on your shared hosting.
 
 Check it from your PC **[PC]** (it can take from a few minutes to an hour):
 
 ```powershell
-nslookup api.nmrep.ng
+nslookup api.nmrep.org
 ```
 
 It must answer with `169.58.49.146`. Do not continue to section 8 (HTTPS) until it does.
 
-> **Why a real domain matters:** the website at `nmrep.ng` and the API at `api.nmrep.ng` share the same registrable domain, so the login cookie works in every browser (Safari, Firefox, phones). An address like `https://169.58.49.146` cannot get a normal certificate and would bring back the cookie problems you had with Render.
+> **Why a real domain matters:** the website at `nmrep.org` and the API at `api.nmrep.org` share the same registrable domain, so the login cookie works in every browser (Safari, Firefox, phones). An address like `https://169.58.49.146` cannot get a normal certificate and would bring back the cookie problems you had with Render.
 
 ---
 
@@ -348,7 +348,7 @@ scp nmrep-backend.tar.gz deploy@169.58.49.146:/tmp/
 mkdir -p /tmp/nmrep-unpack && tar -xzf /tmp/nmrep-backend.tar.gz -C /tmp/nmrep-unpack
 cd /tmp/nmrep-unpack/backend/deploy
 # Remove any Windows line endings, which would break the scripts:
-sed -i 's/\r$//' deploy.sh backup-mongo.sh nmrep-api.service nginx-api.nmrep.ng.conf fail2ban-jail.local
+sed -i 's/\r$//' deploy.sh backup-mongo.sh nmrep-api.service nginx-api.nmrep.org.conf fail2ban-jail.local
 ```
 
 ### 5.4 Install them
@@ -357,7 +357,7 @@ sed -i 's/\r$//' deploy.sh backup-mongo.sh nmrep-api.service nginx-api.nmrep.ng.
 sudo install -m 755 deploy.sh        /usr/local/bin/nmrep-deploy
 sudo install -m 755 backup-mongo.sh  /usr/local/bin/nmrep-backup
 sudo install -m 644 nmrep-api.service /etc/systemd/system/nmrep-api.service
-sudo install -m 644 nginx-api.nmrep.ng.conf /etc/nginx/sites-available/api.nmrep.ng
+sudo install -m 644 nginx-api.nmrep.org.conf /etc/nginx/sites-available/api.nmrep.org
 sudo install -m 644 fail2ban-jail.local /etc/fail2ban/jail.local
 sudo systemctl daemon-reload
 sudo systemctl enable nmrep-api
@@ -384,16 +384,16 @@ TRUST_PROXY=1
 
 MONGODB_URI=mongodb://nmrep_app:CHANGE_ME_NMREP_APP_PASSWORD@127.0.0.1:27017/nmrep?authSource=nmrep
 
-CORS_ORIGINS=https://nmrep.ng
+CORS_ORIGINS=https://nmrep.org
 
-APP_URL=https://nmrep.ng
-EMAIL_FROM=NMREP <no-reply@nmrep.ng>
+APP_URL=https://nmrep.org
+EMAIL_FROM=NMREP <no-reply@nmrep.org>
 RESEND_API_KEY=
 ```
 
 Notes:
 
-- `CORS_ORIGINS` must be exactly the address of your website, with no slash at the end. If you also want to test from `https://www.nmrep.ng`, add it after a comma.
+- `CORS_ORIGINS` must be exactly the address of your website, with no slash at the end. If you also want to test from `https://www.nmrep.org`, add it after a comma.
 - Leave `RESEND_API_KEY=` empty until section 10. The API still starts; emails are just not sent.
 - Do **not** set `ALLOW_TOKEN_AUTH`. It is a legacy testing switch. The mobile app does not need it: it sends `X-Client: app` and gets a Bearer token automatically.
 - The full list of settings with explanations is in `backend/.env.example`.
@@ -438,38 +438,38 @@ sudo -u nmrep bash -c 'cd /opt/nmrep/current/backend && npm run create-super-adm
 
 ## 8. nginx and HTTPS
 
-Only continue when `nslookup api.nmrep.ng` shows `169.58.49.146` (section 1).
+Only continue when `nslookup api.nmrep.org` shows `169.58.49.146` (section 1).
 
 ```bash
-sudo ln -s /etc/nginx/sites-available/api.nmrep.ng /etc/nginx/sites-enabled/api.nmrep.ng
+sudo ln -s /etc/nginx/sites-available/api.nmrep.org /etc/nginx/sites-enabled/api.nmrep.org
 sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t                         # must say "syntax is ok" and "test is successful"
 sudo systemctl reload nginx
-curl -s http://api.nmrep.ng/api/health        # works over plain HTTP for now
+curl -s http://api.nmrep.org/api/health        # works over plain HTTP for now
 ```
 
 Get the free HTTPS certificate. Use an email address you read; it receives expiry warnings:
 
 ```bash
-sudo certbot --nginx -d api.nmrep.ng --redirect --agree-tos --no-eff-email -m you@example.com
+sudo certbot --nginx -d api.nmrep.org --redirect --agree-tos --no-eff-email -m you@example.com
 sudo certbot renew --dry-run          # proves automatic renewal works
 ```
 
 Check from your PC **[PC]**:
 
 ```powershell
-curl.exe -i https://api.nmrep.ng/api/health
+curl.exe -i https://api.nmrep.org/api/health
 ```
 
-You should see `HTTP/1.1 200 OK`, a `Strict-Transport-Security` header and `{"status":"ok","database":true}`. Visiting `http://api.nmrep.ng` must redirect to HTTPS.
+You should see `HTTP/1.1 200 OK`, a `Strict-Transport-Security` header and `{"status":"ok","database":true}`. Visiting `http://api.nmrep.org` must redirect to HTTPS.
 
 Check the login cookie is built correctly (replace the details with the super admin you created):
 
 ```powershell
-curl.exe -i -X POST https://api.nmrep.ng/api/auth/login -H "Origin: https://nmrep.ng" -H "Content-Type: application/json" -d "{\"email\":\"YOUR_SUPER_ADMIN_EMAIL\",\"password\":\"YOUR_PASSWORD\"}"
+curl.exe -i -X POST https://api.nmrep.org/api/auth/login -H "Origin: https://nmrep.org" -H "Content-Type: application/json" -d "{\"email\":\"YOUR_SUPER_ADMIN_EMAIL\",\"password\":\"YOUR_PASSWORD\"}"
 ```
 
-The `Set-Cookie: nmrep_session=...` line must contain `HttpOnly`, `Secure` and `SameSite=Lax`. If it does, the cookie works for the website on `nmrep.ng`.
+The `Set-Cookie: nmrep_session=...` line must contain `HttpOnly`, `Secure` and `SameSite=Lax`. If it does, the cookie works for the website on `nmrep.org`.
 
 ---
 
@@ -554,16 +554,16 @@ The API sends email for: password reset links, confirming a new owner's email ad
 
 ### 10.1 Add and verify your domain in Resend
 
-1. Sign in at resend.com, open **Domains**, click **Add Domain**, enter `nmrep.ng`, choose the region closest to Nigeria that Resend offers.
-2. Resend shows a list of DNS records (typically an MX record and TXT records for SPF and DKIM). Add **every one** of them exactly as shown in the DNS settings of `nmrep.ng`, then click **Verify**. It can take from minutes to a few hours.
-3. Wait until the domain shows **Verified**. Until then Resend refuses to send from `no-reply@nmrep.ng`.
+1. Sign in at resend.com, open **Domains**, click **Add Domain**, enter `nmrep.org`, choose the region closest to Nigeria that Resend offers.
+2. Resend shows a list of DNS records (typically an MX record and TXT records for SPF and DKIM). Add **every one** of them exactly as shown in the DNS settings of `nmrep.org`, then click **Verify**. It can take from minutes to a few hours.
+3. Wait until the domain shows **Verified**. Until then Resend refuses to send from `no-reply@nmrep.org`.
 4. Optional but recommended: add a DMARC record `_dmarc` (TXT) with the value `v=DMARC1; p=none; rua=mailto:you@yourdomain` so receivers trust your mail more.
 
-> If `nmrep.ng` already receives email (for example through your hosting), the records Resend asks for are normally on a sub-domain such as `send.nmrep.ng`, so they do not interfere. If Resend asks you to change an existing MX or SPF record on the main name, stop and ask me.
+> If `nmrep.org` already receives email (for example through your hosting), the records Resend asks for are normally on a sub-domain such as `send.nmrep.org`, so they do not interfere. If Resend asks you to change an existing MX or SPF record on the main name, stop and ask me.
 
 ### 10.2 Create the API key
 
-In Resend open **API Keys**, click **Create API Key**, give it the name `nmrep-vps`, set permission to **Sending access**, and restrict it to the domain `nmrep.ng`. Copy the key (it starts with `re_`). **Resend shows it once.** Store it in your password manager.
+In Resend open **API Keys**, click **Create API Key**, give it the name `nmrep-vps`, set permission to **Sending access**, and restrict it to the domain `nmrep.org`. Copy the key (it starts with `re_`). **Resend shows it once.** Store it in your password manager.
 
 ### 10.3 Put it in the server's `.env`
 
@@ -604,7 +604,7 @@ It prints `Resend accepted the message`. Check your inbox and your spam folder. 
 - A new owner gets a "Confirm your email address" email. Until they confirm, their dashboard shows a banner with a "Send the email again" button. Nothing is blocked.
 - "Forgot your password?" on the login page sends a one-hour, one-time link. Using it signs the person out everywhere. The page always says "if an account uses this address, we have sent a link", so nobody can use it to find out who is registered.
 - To stop the update emails (verification and application decisions) but keep reset and confirmation emails, set `EMAIL_NOTIFICATIONS=false`.
-- The links go to `https://nmrep.ng/reset-password/` and `https://nmrep.ng/verify-email/`. **Those pages are part of the frontend**, so they work only after you upload the new website (section 14). Until then, the links in emails lead to a missing page.
+- The links go to `https://nmrep.org/reset-password/` and `https://nmrep.org/verify-email/`. **Those pages are part of the frontend**, so they work only after you upload the new website (section 14). Until then, the links in emails lead to a missing page.
 
 ### 10.6 Automated verification checks (Prembly), optional
 
@@ -672,7 +672,7 @@ What to know:
 - The type is decided from the first bytes of the file (PDF, JPEG or PNG only), never from its name. Limits: 5 MB per file, 20 files and 40 MB per business (`DOCUMENT_MAX_MB`, `DOCUMENT_MAX_FILES`, `DOCUMENT_MAX_TOTAL_MB`). The files are not scanned for viruses; downloads are always sent as attachments with `nosniff`.
 - An organisation sees only the documents an owner attached to an application, only while that sharing is active (withdrawn, replaced and deleted ends it), and **every download by an organisation or by NMREP staff is written to the activity log**.
 - The nightly backup script now also saves `/var/lib/nmrep/documents` to `/var/backups/nmrep/nmrep-documents-*.tar.gz`. Copy those off the server like the database backups.
-- nginx already allows requests up to 64 KB. **Uploads need more**: set `client_max_body_size 8m;` in the `location /api/documents` block (the site file in `deploy/nginx-api.nmrep.ng.conf` has it), then `sudo nginx -t && sudo systemctl reload nginx`.
+- nginx already allows requests up to 64 KB. **Uploads need more**: set `client_max_body_size 8m;` in the `location /api/documents` block (the site file in `deploy/nginx-api.nmrep.org.conf` has it), then `sudo nginx -t && sudo systemctl reload nginx`.
 - Deleting an account deletes its files from the disk.
 - **Product pictures use the same private, encrypted storage.** Owners can add up to 3 pictures (JPEG or PNG, 3 MB each) to each product or service. They need the same `DOCUMENT_ENCRYPTION_KEY` and folder as above: without the key the picture controls are hidden, and the nightly backup of `/var/lib/nmrep/documents` already covers them. A larger `client_max_body_size` than the 8m set for documents is not needed.
 
@@ -684,7 +684,7 @@ Every business owner pays ₦1,000 a year. It is taken through **one gateway at 
 
 1. Create and get your ALATPay business approved at https://alatpay.ng (onboarding portal). Set up your ALATPay PIN: Settings, then View, then Set Up PIN.
 2. In the ALATPay dashboard open Settings, Business, View (it asks for the PIN). Copy the **Secret Key** and the **Business ID**. (The Public Key is for web plugins and is not used.)
-3. In the same place, Edit the business and set the **webhook URL** to `https://api.nmrep.ng/api/webhooks/alatpay`, then Update Details. ALATPay tells the server about each completed payment there. The documentation shows no signature, so the server never believes the message: it only uses the transaction id in it and asks ALATPay itself before recording anything.
+3. In the same place, Edit the business and set the **webhook URL** to `https://api.nmrep.org/api/webhooks/alatpay`, then Update Details. ALATPay tells the server about each completed payment there. The documentation shows no signature, so the server never believes the message: it only uses the transaction id in it and asks ALATPay itself before recording anything.
 4. Add to `/opt/nmrep/shared/.env` (no spaces, no quotes), then restart:
 
    ```
@@ -707,7 +707,7 @@ What to know about ALATPay:
 Every business owner pays ₦1,000 a year through Paystack. It is **off** until you set a Paystack secret key.
 
 1. In the Paystack dashboard, copy the **secret key** (Settings, API Keys & Webhooks). Start with the **test** key (`sk_test_...`): it takes Paystack's test cards and moves no money. Use the live key (`sk_live_...`) only at launch.
-2. In the same page set the **webhook URL** to `https://api.nmrep.ng/api/webhooks/paystack`. Paystack tells the server about every payment there, so a payment is recorded even if the payer closes the page. The server checks the signature and asks Paystack to confirm each payment, so nobody can fake one.
+2. In the same page set the **webhook URL** to `https://api.nmrep.org/api/webhooks/paystack`. Paystack tells the server about every payment there, so a payment is recorded even if the payer closes the page. The server checks the signature and asks Paystack to confirm each payment, so nobody can fake one.
 3. Add to `/opt/nmrep/shared/.env` (no spaces, no quotes), then restart:
 
    ```
@@ -763,9 +763,9 @@ Reboot to prove everything starts by itself:
 sudo reboot
 ```
 
-Wait a minute, log in again, and run `curl -s https://api.nmrep.ng/api/health` from your PC. It must still answer.
+Wait a minute, log in again, and run `curl -s https://api.nmrep.org/api/health` from your PC. It must still answer.
 
-Optional but wise: add a free uptime monitor (for example UptimeRobot) that requests `https://api.nmrep.ng/api/health` every 5 minutes and emails you when it fails.
+Optional but wise: add a free uptime monitor (for example UptimeRobot) that requests `https://api.nmrep.org/api/health` every 5 minutes and emails you when it fails.
 
 ---
 
@@ -824,11 +824,11 @@ sudo systemctl restart systemd-journald
 
 ## 14. When you are ready to upload the frontend
 
-1. In the project's root `.env` on your PC, set `NEXT_PUBLIC_API_URL=https://api.nmrep.ng` (or delete the line: that is the production default).
+1. In the project's root `.env` on your PC, set `NEXT_PUBLIC_API_URL=https://api.nmrep.org` (or delete the line: that is the production default).
 2. Rebuild the site with `npm run build` and re-create `nmrep-site.zip` (the usual steps in `DEPLOY.md`).
-3. `public/.htaccess` already allows `https://api.nmrep.ng` in its security rules. You can remove the old Render address from the `connect-src` line.
-4. Upload as usual, then test on a phone with mobile data: register, log in, go to the dashboard, log out. Also test **Forgot your password** end to end, and confirm the email arrives and the link opens `https://nmrep.ng/reset-password/`.
-5. Make sure the server's `.env` has `CORS_ORIGINS=https://nmrep.ng` and no `ALLOW_TOKEN_AUTH` line.
+3. `public/.htaccess` already allows `https://api.nmrep.org` in its security rules. You can remove the old Render address from the `connect-src` line.
+4. Upload as usual, then test on a phone with mobile data: register, log in, go to the dashboard, log out. Also test **Forgot your password** end to end, and confirm the email arrives and the link opens `https://nmrep.org/reset-password/`.
+5. Make sure the server's `.env` has `CORS_ORIGINS=https://nmrep.org` and no `ALLOW_TOKEN_AUTH` line.
 
 ---
 
@@ -888,7 +888,7 @@ The app sells the yearly subscription (product `nmrep_annual`, base plan `yearly
 
 1. **Service account.** In Google Cloud (any project) create a service account, make a JSON key, and in the Play Console under Users and permissions invite its email address with access to the NMREP app (view financial data and manage orders and subscriptions). It can take a few hours to start working. This is not the Firebase key.
 2. **Put the key on the server, outside the website folder:** `/opt/nmrep/shared/google-play-service-account.json` (permissions 600), then set `GOOGLE_PLAY_SERVICE_ACCOUNT_FILE` in `.env` and restart. The start-up log says "Google Play subscriptions are on".
-3. **Notifications (recommended).** In the Play Console, Monetisation setup, Real-time developer notifications: create a Pub/Sub topic, then a **push** subscription to `https://api.nmrep.ng/api/webhooks/google-play?secret=<GOOGLE_PLAY_RTDN_SECRET>`. Without it renewals and refunds are still picked up by an hourly check, only later.
+3. **Notifications (recommended).** In the Play Console, Monetisation setup, Real-time developer notifications: create a Pub/Sub topic, then a **push** subscription to `https://api.nmrep.org/api/webhooks/google-play?secret=<GOOGLE_PLAY_RTDN_SECRET>`. Without it renewals and refunds are still picked up by an hourly check, only later.
 4. **Test** with a license tester account in the Play Console: buy in the app, and the account becomes active (the app then shows no paywall and the website shows the account as paid).
 
 If the key is missing the app cannot confirm purchases (503 `play_unavailable`); website payments are unaffected. Apple (App Store) purchases are not built yet.

@@ -31,7 +31,7 @@ export function loadConfig(env = process.env) {
       // forward by appTtlDays, but never beyond appMaxDays after the login, so a stolen token cannot live forever.
       appTtlDays: Number(env.APP_SESSION_TTL_DAYS ?? 30),
       appMaxDays: Number(env.APP_SESSION_MAX_DAYS ?? 90),
-      // "lax" works when the site and the API share a registrable domain (nmrep.ng and api.nmrep.ng).
+      // "lax" works when the site and the API share a registrable domain (nmrep.org and api.nmrep.org).
       // Use "none" only if they are on unrelated domains; browsers that block third-party cookies will then break login.
       sameSite: (env.COOKIE_SAMESITE ?? "lax").toLowerCase(),
       domain: env.COOKIE_DOMAIN || undefined,
@@ -39,7 +39,7 @@ export function loadConfig(env = process.env) {
       // TESTING ONLY. When true, login and registration also return the session token in the response and
       // the API accepts it as "Authorization: Bearer <token>", so the site works from a different domain
       // without cookies. Scripts on the page can read such a token, which is weaker than an httpOnly cookie.
-      // Leave this off in production (api.nmrep.ng with cookies).
+      // Leave this off in production (api.nmrep.org with cookies).
       allowBearer: env.ALLOW_TOKEN_AUTH === "true",
     },
     lockout: { maxFailures: 5, minutes: 15 },
@@ -137,11 +137,11 @@ export function loadConfig(env = process.env) {
     // Email through Resend. Without RESEND_API_KEY and EMAIL_FROM, email is switched off and everything else still works.
     email: {
       apiKey: env.RESEND_API_KEY ?? "",
-      // For example: NMREP <no-reply@nmrep.ng>. The domain must be verified in Resend.
+      // For example: NMREP <no-reply@nmrep.org>. The domain must be verified in Resend.
       from: env.EMAIL_FROM ?? "",
       replyTo: env.EMAIL_REPLY_TO ?? "",
       // Where the links in emails point: the website. No trailing slash.
-      appUrl: (env.APP_URL ?? (isProd ? "https://nmrep.ng" : "http://localhost:3000")).replace(/\/+$/, ""),
+      appUrl: (env.APP_URL ?? (isProd ? "https://nmrep.org" : "http://localhost:3000")).replace(/\/+$/, ""),
       // Also email owners about verification and application decisions. Set EMAIL_NOTIFICATIONS=false to stop that.
       notifications: env.EMAIL_NOTIFICATIONS !== "false",
     },
