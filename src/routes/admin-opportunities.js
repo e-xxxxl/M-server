@@ -21,6 +21,7 @@ import { businessExportQuerySchema, idParamSchema } from "../schemas.js";
 import { lagosRange } from "../lib/date-range.js";
 import { normaliseQuestions } from "../lib/opportunity-form.js";
 import { businessBreakdowns, trainingStats } from "../lib/report-breakdowns.js";
+import { impactTotals } from "../lib/impact.js";
 import { Payment } from "../models/Payment.js";
 import { PlaySubscription } from "../models/PlaySubscription.js";
 import { trainingStaffRoutes } from "./training.js";
@@ -323,6 +324,9 @@ export function adminOpportunityRoutes({ config }) {
       applicationsByStatus: named(appStatus),
       applicationsPerOpportunity: perOpportunity,
       ...(await businessBreakdowns()),
+      // Jobs created (typed in by owners or the super admin), opportunities accessed, programme attendees and certificates, and
+      // businesses formalised (counted from the platform). Nothing about funding.
+      impact: await impactTotals(),
       training: await trainingStats(),
       registrationFees: await (async () => {
         const [row] = await Payment.aggregate([{ $match: { status: "success" } }, { $group: { _id: null, payments: { $sum: 1 }, kobo: { $sum: "$amountKobo" } } }]);

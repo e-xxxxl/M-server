@@ -9,7 +9,9 @@ import { checkLocation } from "../lib/lgas.js";
 import { ApiError } from "../middleware/errors.js";
 import { requirePaidRegistration } from "../middleware/paid.js";
 import { requireAuth, requireRole } from "../middleware/security.js";
-import { businessPatchSchema } from "../schemas.js";
+import { businessPatchSchema, coOwnerCreateSchema, coOwnerPatchSchema } from "../schemas.js";
+import { maxCoOwners } from "../lib/co-owners.js";
+import { fingerprint, maskValue } from "../lib/verification.js";
 
 export function businessRoutes({ config }) {
   const router = Router();
@@ -27,42 +29,98 @@ export function businessRoutes({ config }) {
     res.json({ business, insights: buildInsights(business) });
   });
 
-  // The logo: one JPEG or PNG, kept encrypted like the document wallet, seen only by the owner and NMREP staff.
-  const MAX_LOGO_BYTES = 2 * 1024 * 1024;
-  router.put("/logo", async (req, res) => {
-    if (!documentStorage.enabled) throw new ApiError(503, "images_unavailable", "Pictures are not available right now. Please try again later.");
-    const business = await own(req);
-    const { buffer, fields } = await readUpload(req, { ...config.documents, maxFileBytes: Math.min(MAX_LOGO_BYTES, config.documents.maxFileBytes) });
-    if (Object.keys(fields).length > 0) throw new ApiError(422, "validation", "Please check the highlighted fields.", { _: "Send only the file." });
-    const mime = sniffMime(buffer);
-    if (mime !== "image/jpeg" && mime !== "image/png") throw new ApiError(422, "unsupported_file", "Upload a JPEG or PNG picture.", { file: "Upload a JPEG or PNG picture." });
-    const stored = await documentStorage.save(buffer);
-    const old = business.logo?.storageKey;
-    try {
-      business.logo = { mime, size: buffer.length, ...stored };
-      await business.save();
-    } catch (err) {
-      await documentStorage.remove(stored.storageKey);
-      throw err;
-    }
-    if (old) await documentStorage.remove(old);
-    res.json({ business, insights: buildInsights(business) });
+  // The logo and the owner's photo: one JPEG or PNG each, kept encrypted like the document wallet, seen only by the owner and
+  // NMREP staff (the photo only by staff allowed to see personal details).
+  const MAX_PICTURE_BYTES = 2 * 1024 * 1024;
+  for (const [field, noun] of [["logo", "logo"], ["photo", "photo"]]) {
+    router.put(`/${field}`, async (req, res) => {
+      if (!documentStorage.enabled) throw new ApiError(503, "images_unavailable", "Pictures are not available right now. Please try again later.");
+      const business = await own(req);
+      const { buffer, fields } = await readUpload(req, { ...config.documents, maxFileBytes: Math.min(MAX_PICTURE_BYTES, config.documents.maxFileBytes) });
+      if (Object.keys(fields).length > 0) throw new ApiError(422, "validation", "Please check the highlighted fields.", { _: "Send only the file." });
+      const mime = sniffMime(buffer);
+      if (mime !== "image/jpeg" && mime !== "image/png") throw new ApiError(422, "unsupported_file", `Upload a JPEG or PNG ${noun}.`, { file: `Upload a JPEG or PNG ${noun}.` });
+      const stored = await documentStorage.save(buffer);
+      const old = business[field]?.storageKey;
+      try {
+        business[field] = { mime, size: buffer.length, ...stored };
+        await business.save();
+      } catch (err) {
+        await documentStorage.remove(stored.storageKey);
+        throw err;
+      }
+      if (old) await documentStorage.remove(old);
+      res.json({ business, insights: buildInsights(business) });
+    });
+
+    router.get(`/${field}`, async (req, res) => {
+      const business = await own(req);
+      if (!business[field]?.storageKey) throw new ApiError(404, "not_found", "Not found.");
+      await sendProductImage(res, business[field]);
+    });
+
+    router.delete(`/${field}`, async (req, res) => {
+      const business = await own(req);
+      if (business[field]?.storageKey) {
+        await documentStorage.remove(business[field].storageKey);
+        business[field] = undefined;
+        await business.save();
+      }
+      res.status(204).end();
+    });
+  }
+
+  // Other owners or directors: up to two besides the main owner. Each gives name, role, phone, email and their own NIN, of
+  // which only the last four digits and a fingerprint are kept. Not shared with partners.
+  const coOwnerView = (business) => business.toJSON().coOwners;
+  const ninMarks = (nin) => ({ ninMasked: maskValue(nin), ninHash: String(config.verification.hashKey).length >= 32 ? fingerprint(config, "nin", nin) : "" });
+  /** Refuses a NIN that this business already gave for another owner. */
+  async function checkNinFree(business, ninHash, exceptId = null) {
+    if (!ninHash) return;
+    const withHash = await Business.findById(business._id).select("+ninHash");
+    const used = [withHash.ninHash, ...business.coOwners.filter((c) => String(c._id) !== String(exceptId)).map((c) => c.ninHash)];
+    if (used.includes(ninHash)) throw new ApiError(422, "validation", "Please check the highlighted fields.", { nin: "This NIN is already used for this business." });
+  }
+
+  router.get("/co-owners", async (req, res) => {
+    res.json({ coOwners: coOwnerView(await own(req)), max: maxCoOwners });
   });
 
-  router.get("/logo", async (req, res) => {
+  router.post("/co-owners", async (req, res) => {
+    const { nin, consent: _consent, ...data } = coOwnerCreateSchema.parse(req.body);
     const business = await own(req);
-    if (!business.logo?.storageKey) throw new ApiError(404, "not_found", "Not found.");
-    await sendProductImage(res, business.logo);
+    if (business.coOwners.length >= maxCoOwners) {
+      throw new ApiError(422, "validation", `A business can list up to ${maxCoOwners} other owners or directors.`, { _: `A business can list up to ${maxCoOwners} other owners or directors.` });
+    }
+    const marks = ninMarks(nin);
+    await checkNinFree(business, marks.ninHash);
+    business.coOwners.push({ ...data, ...marks });
+    await business.save();
+    res.status(201).json({ coOwners: coOwnerView(business), max: maxCoOwners });
   });
 
-  router.delete("/logo", async (req, res) => {
+  router.patch("/co-owners/:id", async (req, res) => {
+    const { nin, consent: _consent, ...data } = coOwnerPatchSchema.parse(req.body);
     const business = await own(req);
-    if (business.logo?.storageKey) {
-      await documentStorage.remove(business.logo.storageKey);
-      business.logo = undefined;
-      await business.save();
+    const one = business.coOwners.id(req.params.id);
+    if (!one) throw new ApiError(404, "not_found", "Not found.");
+    Object.assign(one, data);
+    if (nin !== undefined) {
+      const marks = ninMarks(nin);
+      await checkNinFree(business, marks.ninHash, one._id);
+      Object.assign(one, marks);
     }
-    res.status(204).end();
+    await business.save();
+    res.json({ coOwners: coOwnerView(business), max: maxCoOwners });
+  });
+
+  router.delete("/co-owners/:id", async (req, res) => {
+    const business = await own(req);
+    const one = business.coOwners.id(req.params.id);
+    if (!one) throw new ApiError(404, "not_found", "Not found.");
+    one.deleteOne();
+    await business.save();
+    res.json({ coOwners: coOwnerView(business), max: maxCoOwners });
   });
 
   router.patch("/", async (req, res) => {
@@ -75,8 +133,11 @@ export function businessRoutes({ config }) {
     if (patch.state !== undefined || patch.lga !== undefined) {
       patch.lga = await checkLocation({ state: patch.state ?? business.state, lga: patch.lga ?? business.lga });
     }
+    const hadCac = business.hasCac === "Yes" || Boolean(business.cacNumber);
     Object.assign(business, patch);
     applyComplianceRules(business, patch);
+    // Getting a CAC number after joining NMREP means the business has formalised: counted in the impact reports.
+    if (!hadCac && !business.formalisedAt && (business.hasCac === "Yes" || business.cacNumber)) business.formalisedAt = new Date();
     await business.save();
     res.json({ business, insights: buildInsights(business) });
   });

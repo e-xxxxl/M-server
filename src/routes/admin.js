@@ -17,6 +17,9 @@ import { sendProductImage } from "./products.js";
 import { ApiError } from "../middleware/errors.js";
 import { requireAuth, requirePasswordChanged, requireRole } from "../middleware/security.js";
 import { can, permissionsOf, requirePermission } from "../lib/permissions.js";
+import { derivedFor, entriesFor } from "../lib/impact.js";
+import { ImpactEntry } from "../models/ImpactEntry.js";
+import { impactBodySchema, impactYearParam } from "../schemas.js";
 import {
   adminCreateSchema,
   adminPatchSchema,
@@ -199,8 +202,13 @@ export function adminRoutes({ config }) {
     const verificationChecks = await Promise.all(checks.map(async (c) => reviewerView(c, await duplicatesOf(c))));
     const submitted = await submittedDocuments(business);
     const products = await Product.find({ owner: business.owner }).sort({ createdAt: -1 });
+    const personal = can(req.user, "personal");
+    const view = business.toJSON();
+    // The other owners' phone and email follow the same rule as the main owner's.
+    if (!personal) view.coOwners = view.coOwners.map((c) => ({ ...c, phone: "", email: "" }));
     res.json({
-      business: business.toJSON(),
+      business: view,
+      impact: { entries: (await entriesFor(business._id)).map((e) => e.toJSON()), derived: await derivedFor(business) },
       products,
       owner: can(req.user, "personal") ? ownerSummary(owner) : owner ? { ...ownerSummary(owner), email: "", phone: "" } : null,
       verificationChecks,
@@ -231,6 +239,29 @@ export function adminRoutes({ config }) {
     const business = await Business.findById(parseId(req.params.id));
     if (!business?.logo?.storageKey) throw new ApiError(404, "not_found", "Not found.");
     await sendProductImage(res, business.logo);
+  });
+
+  // The owner's photo: personal, so only staff who may see personal details.
+  router.get("/businesses/:id/photo", requirePermission("personal"), async (req, res) => {
+    const business = await Business.findById(parseId(req.params.id));
+    if (!business?.photo?.storageKey) throw new ApiError(404, "not_found", "Not found.");
+    await sendProductImage(res, business.photo);
+  });
+
+  // The super admin can enter or correct the jobs a business created in a year (the owner can too). Written to the activity log.
+  router.put("/businesses/:id/impact/:year", superOnly, async (req, res) => {
+    const business = await Business.findById(parseId(req.params.id));
+    if (!business) throw new ApiError(404, "not_found", "Not found.");
+    const year = impactYearParam.safeParse(req.params.year);
+    if (!year.success || year.data > new Date().getFullYear()) throw new ApiError(422, "validation", "Choose a year up to this year.", { year: "Choose a year up to this year." });
+    const { jobsCreated } = impactBodySchema.parse(req.body);
+    const entry = await ImpactEntry.findOneAndUpdate(
+      { business: business._id, year: year.data },
+      { $set: { jobsCreated, enteredBy: "admin", enteredByName: req.user.fullName.slice(0, 100) } },
+      { upsert: true, returnDocument: "after", setDefaultsOnInsert: true },
+    );
+    await audit(req.user, "impact.set", `Set the jobs created in ${year.data} to ${jobsCreated} for "${business.businessName}"`, { type: "business", id: business._id });
+    res.json({ entry: entry.toJSON() });
   });
 
   // A picture of one of the business's products, for staff looking at the business profile.

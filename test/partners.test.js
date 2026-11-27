@@ -644,3 +644,57 @@ describe("indexes", () => {
     assert.ok(indexes.some((i) => i.unique && i.key.name === 1));
   });
 });
+
+describe("a partner narrows its applicants by what they shared", () => {
+  const list = (p, query) => call("GET", `/api/partner/applications?${query}`, { cookie: p.cookie, origin: null });
+
+  it("filters by business summary fields, by name and by day, for applicants who are sharing", async () => {
+    const p = await partner("Opportunity Partner");
+    const id = await openByPartner(p);
+    const lagos = await owner({ businessName: "Filter Lagos Ltd", state: "Lagos", lga: "Ikeja", sector: "Manufacturing" });
+    const kano = await owner({ businessName: "Filter Kano Farms", state: "Kano", lga: "Nasarawa", sector: "Agriculture and agro-processing" });
+    await apply(lagos, id);
+    await apply(kano, id);
+    const names = async (q) => (await list(p, q)).json.items.map((i) => i.businessName).sort();
+    assert.deepEqual(await names(""), ["Filter Kano Farms", "Filter Lagos Ltd"]);
+    assert.deepEqual(await names("state=Kano"), ["Filter Kano Farms"]);
+    assert.deepEqual(await names("sector=Manufacturing"), ["Filter Lagos Ltd"]);
+    assert.deepEqual(await names("q=lagos"), ["Filter Lagos Ltd"]);
+    assert.deepEqual(await names("state=Kano&sector=Manufacturing"), []);
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Lagos" });
+    assert.equal((await names(`from=${today}&to=${today}`)).length, 2);
+    assert.deepEqual(await names("from=2000-01-01&to=2000-12-31"), []);
+    assert.equal((await list(p, "state=Narnia")).status, 422);
+    assert.equal((await list(p, "color=red")).status, 422);
+  });
+
+  it("matches the fields beyond the summary only for applicants who also shared their full profile", async () => {
+    const p = await partner("Opportunity Partner");
+    const id = await openByPartner(p);
+    const open = await owner({ businessName: "Profile Shared Co" });
+    const closed = await owner({ businessName: "Profile Private Co" });
+    for (const [who, share] of [[open, true], [closed, false]]) {
+      await call("PATCH", "/api/business", { cookie: who.cookie, body: { womenOwned: "Yes", gender: "Female" } });
+      await apply(who, id, { consent: { summary: true, profile: share } });
+    }
+    const names = async (q) => (await list(p, q)).json.items.map((i) => i.businessName).sort();
+    assert.deepEqual(await names("womenOwned=Yes"), ["Profile Shared Co"], "the private applicant cannot be found by a field they did not share");
+    assert.deepEqual(await names("gender=Female"), ["Profile Shared Co"]);
+    assert.deepEqual(await names("gender=Male"), []);
+  });
+
+  it("never matches an applicant who withdrew, and never reaches another partner's applicants", async () => {
+    const p = await partner("Opportunity Partner");
+    const other = await partner();
+    const id = await openByPartner(p);
+    const otherId = await openByPartner(other);
+    const gone = await owner({ businessName: "Withdrawn Filter Co", state: "Oyo", lga: "Ibadan North" });
+    const mine = await owner({ businessName: "Still Here Co", state: "Oyo", lga: "Ibadan North" });
+    const sub = await apply(gone, id);
+    await apply(mine, id);
+    await apply(gone, otherId);
+    assert.equal((await call("POST", `/api/applications/${sub.json.application.id}/withdraw`, { cookie: gone.cookie })).status, 200);
+    const names = (await list(p, "state=Oyo")).json.items.map((i) => i.businessName).sort();
+    assert.deepEqual(names, ["Still Here Co"]);
+  });
+});

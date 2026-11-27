@@ -279,6 +279,28 @@ export const playVerifySchema = z
   })
   .strict();
 
+/** Another owner or director of the business. Their NIN is checked for shape only here; only its last four digits are kept. */
+const coOwnerFields = {
+  fullName: text(100),
+  role: oneOf(o.ownerRoles),
+  phone: phoneSchema,
+  email: emailSchema,
+};
+const ninText = z.string().trim().regex(/^[0-9]{11}$/, "Enter the 11 digits of the NIN, with no spaces or dashes.");
+const ninConsentField = z.literal(true, { message: "Please confirm that this person agreed to give their NIN." });
+export const coOwnerCreateSchema = z.object({ ...coOwnerFields, nin: ninText, consent: ninConsentField }).strict();
+export const coOwnerPatchSchema = z
+  .object({ ...Object.fromEntries(Object.entries(coOwnerFields).map(([k, v]) => [k, v.optional()])), nin: ninText.optional(), consent: z.literal(true).optional() })
+  .strict()
+  .refine((v) => v.nin === undefined || v.consent === true, { message: "Please confirm that this person agreed to give their NIN.", path: ["consent"] })
+  .refine((v) => Object.keys(v).some((k) => k !== "consent" && v[k] !== undefined), { message: "Nothing to update.", path: ["fullName"] });
+
+/** The jobs a business created in a year. */
+export const impactBodySchema = z
+  .object({ jobsCreated: z.number({ message: "Enter a whole number of jobs." }).int("Enter a whole number of jobs.").min(0, "Jobs cannot be negative.").max(100000, "That is too many.") })
+  .strict();
+export const impactYearParam = z.coerce.number().int().min(2000).max(2100);
+
 export const forgotPasswordSchema = z.object({ email: emailSchema }).strict();
 
 /** The token from the link in an email. Random URL-safe text, so anything else is refused before it reaches a query. */

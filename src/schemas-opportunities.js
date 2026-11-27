@@ -1,4 +1,5 @@
 import { z } from "zod";
+import * as o from "./options.js";
 import { criterionKinds } from "./lib/eligibility.js";
 import {
   adminSettableStatuses,
@@ -243,6 +244,24 @@ export const applicationListQuerySchema = z
     status: z.preprocess(blankToUndefined, oneOf(reviewableStatuses).optional()),
     opportunity: z.preprocess(blankToUndefined, objectId.optional()),
     organisation: z.preprocess(blankToUndefined, objectId.optional()),
+    // Filters on what the applicant shared (see lib/sharing.js). The business summary is always shared; the others only count
+    // for applicants who also agreed to share the full profile.
+    q: z.preprocess(blankToUndefined, z.string().trim().max(80).optional()),
+    state: z.preprocess(blankToUndefined, oneOf(o.states).optional()),
+    sector: z.preprocess(blankToUndefined, oneOf(o.sectors).optional()),
+    businessType: z.preprocess(blankToUndefined, oneOf(o.businessTypes).optional()),
+    businessSize: z.preprocess(blankToUndefined, oneOf(["Micro", "Small", "Medium", "Large"]).optional()),
+    hasCac: z.preprocess(blankToUndefined, oneOf(o.yesNo).optional()),
+    verified: z.preprocess(blankToUndefined, oneOf(["Yes", "No"]).optional()),
+    gender: z.preprocess(blankToUndefined, oneOf(o.genders).optional()),
+    womenOwned: z.preprocess(blankToUndefined, oneOf(o.yesNo).optional()),
+    youthOwned: z.preprocess(blankToUndefined, oneOf(o.yesNo).optional()),
+    disabilityOwned: z.preprocess(blankToUndefined, oneOf(o.yesNo).optional()),
+    agriculturalBusiness: z.preprocess(blankToUndefined, oneOf(o.yesNo).optional()),
+    manufacturingBusiness: z.preprocess(blankToUndefined, oneOf(o.yesNo).optional()),
+    exports: z.preprocess(blankToUndefined, oneOf(o.yesNo).optional()),
+    from: z.preprocess(blankToUndefined, z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a date like 2026-11-30.").optional()),
+    to: z.preprocess(blankToUndefined, z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a date like 2026-11-30.").optional()),
   })
   .strict();
 

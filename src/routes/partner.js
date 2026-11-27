@@ -87,6 +87,32 @@ export function partnerRoutes({ config }) {
     return { applicant: applicantView(application.snapshot, owner, consent.categories), shared: consent.categories };
   }
 
+  /**
+   * Narrows an applications list by fields of the applicant's snapshot, but only by what the applicant shared: applicants who
+   * withdrew are never matched, and the fields beyond the business summary (gender, ownership flags) only match applicants who
+   * also agreed to share their full profile. So a filter can never reveal something the partner may not see.
+   */
+  async function filterBySharedFields(filter, opportunityIds, by) {
+    const summary = { state: by.state, sector: by.sector, businessType: by.businessType, businessSize: by.businessSize, hasCac: by.hasCac };
+    const profile = { gender: by.gender, womenOwned: by.womenOwned, youthOwned: by.youthOwned, disabilityOwned: by.disabilityOwned, agriculturalBusiness: by.agriculturalBusiness, manufacturingBusiness: by.manufacturingBusiness, exports: by.exports };
+    const wantsSummary = Object.values(summary).some((v) => v !== undefined) || by.q !== undefined || by.verified !== undefined;
+    const wantsProfile = Object.values(profile).some((v) => v !== undefined);
+    if (wantsSummary || wantsProfile) {
+      const consentFilter = { opportunity: mongoose.trusted({ $in: opportunityIds }), revokedAt: null };
+      if (wantsProfile) consentFilter.categories = "profile";
+      filter._id = mongoose.trusted({ $in: await ConsentRecord.distinct("application", consentFilter) });
+    }
+    for (const [name, value] of Object.entries({ ...summary, ...profile })) if (value !== undefined) filter[`snapshot.${name}`] = value;
+    if (by.verified !== undefined) filter["snapshot.verificationStatus"] = by.verified === "Yes" ? "Verified" : mongoose.trusted({ $ne: "Verified" });
+    if (by.q !== undefined) filter["snapshot.businessName"] = mongoose.trusted({ $regex: by.q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" });
+    if (by.from || by.to) {
+      const range = {};
+      if (by.from) range.$gte = new Date(`${by.from}T00:00:00+01:00`);
+      if (by.to) range.$lte = new Date(`${by.to}T23:59:59.999+01:00`);
+      filter.submittedAt = mongoose.trusted(range);
+    }
+  }
+
   // ----------------------------------------------------------------- overview
   router.get("/overview", async (req, res) => {
     const ids = await ownOpportunityIds(req);
@@ -169,9 +195,10 @@ export function partnerRoutes({ config }) {
 
   // ------------------------------------------------------------- applications
   router.get("/applications", async (req, res) => {
-    const { page = 1, status, opportunity } = applicationListQuerySchema.parse(req.query);
+    const { page = 1, status, opportunity, ...by } = applicationListQuerySchema.parse(req.query);
     const ids = await ownOpportunityIds(req);
     const filter = { opportunity: mongoose.trusted({ $in: ids }), status: status ?? mongoose.trusted({ $in: reviewableStatuses }) };
+    await filterBySharedFields(filter, ids, by);
     if (opportunity) {
       if (!ids.map(String).includes(opportunity)) throw new ApiError(404, "not_found", "Not found.");
       filter.opportunity = opportunity;

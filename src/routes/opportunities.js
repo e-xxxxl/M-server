@@ -41,7 +41,7 @@ const fitSummary = (fit) => ({ label: fit.label, met: fit.met, total: fit.total,
 function snapshotOf(business) {
   const json = business.toJSON();
   const snapshot = {};
-  for (const name of [...profileFieldNames, "hasCac", "hasTin", "verificationStatus", "nmrepId", "description", "businessSize", "monthlyRevenue", "womenOwned", "youthOwned", "disabilityOwned", "agriculturalBusiness", "manufacturingBusiness", "exports", "latitude", "longitude"]) snapshot[name] = json[name] ?? null;
+  for (const name of [...profileFieldNames, "hasCac", "hasTin", "verificationStatus", "nmrepId", "description", "businessSize", "monthlyRevenue", "gender", "womenOwned", "youthOwned", "disabilityOwned", "agriculturalBusiness", "manufacturingBusiness", "exports", "latitude", "longitude"]) snapshot[name] = json[name] ?? null;
   return snapshot;
 }
 

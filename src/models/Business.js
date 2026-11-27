@@ -72,11 +72,35 @@ const businessSchema = new mongoose.Schema(
     skillGaps: { type: [String], default: [] },
     preferredFormat: str(20),
     interests: { type: [String], default: [] },
-    // The logo is an encrypted file in the private document folder. Only facts about it are kept here.
+    // The logo and the owner's photo are encrypted files in the private document folder. Only facts about them are kept here.
     logo: {
       type: new mongoose.Schema({ mime: { type: String, enum: ["image/jpeg", "image/png"], required: true }, size: Number, storageKey: String, iv: String, tag: String }, { _id: false }),
       default: undefined,
     },
+    photo: {
+      type: new mongoose.Schema({ mime: { type: String, enum: ["image/jpeg", "image/png"], required: true }, size: Number, storageKey: String, iv: String, tag: String }, { _id: false }),
+      default: undefined,
+    },
+    // Other owners or directors (up to two besides the main owner). Each gives their own NIN, kept only as its last four
+    // digits and a keyed fingerprint, like the main owner's. Never shown to partners.
+    coOwners: {
+      type: [
+        new mongoose.Schema(
+          {
+            fullName: { type: String, required: true, trim: true, maxlength: 100 },
+            role: { type: String, required: true, maxlength: 40 },
+            phone: { type: String, required: true, trim: true, maxlength: 20 },
+            email: { type: String, required: true, trim: true, lowercase: true, maxlength: 254 },
+            ninMasked: { type: String, required: true, maxlength: 20 },
+            ninHash: { type: String, default: "", maxlength: 64 },
+          },
+          { timestamps: true },
+        ),
+      ],
+      default: [],
+    },
+    // The day the business got a CAC number after joining NMREP (it formalised). Counted in the impact reports.
+    formalisedAt: { type: Date, default: null },
     // Digital
     website: str(120),
     facebook: str(60),
@@ -114,6 +138,9 @@ const businessSchema = new mongoose.Schema(
         delete ret.referral;
         // Never the storage details of the logo: only what a screen needs to ask for it.
         ret.logo = ret.logo?.storageKey ? { mime: ret.logo.mime, size: ret.logo.size } : null;
+        ret.photo = ret.photo?.storageKey ? { mime: ret.photo.mime, size: ret.photo.size } : null;
+        // The other owners without their fingerprints.
+        ret.coOwners = (ret.coOwners ?? []).map((c) => ({ id: String(c._id), fullName: c.fullName, role: c.role, phone: c.phone, email: c.email, ninMasked: c.ninMasked }));
         ret.businessSize = businessSizeOf(ret.employees);
         ret.ninProvided = Boolean(ret.ninMasked);
         delete ret.ninHash;

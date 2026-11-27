@@ -20,6 +20,7 @@ import { opportunityRoutes } from "./routes/opportunities.js";
 import { partnerRoutes } from "./routes/partner.js";
 import { authRoutes } from "./routes/auth.js";
 import { businessRoutes } from "./routes/business.js";
+import { impactRoutes } from "./routes/impact.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
 import { verificationRoutes } from "./routes/verification.js";
 import { documentRoutes } from "./routes/documents.js";
@@ -94,6 +95,7 @@ export function createApp(config, { log = true } = {}) {
   app.use("/api/payments", paymentRoutes({ config }));
   app.use("/api/devices", deviceRoutes({ config, limiter: limiters.reset }));
   app.use("/api/business", businessRoutes({ config }));
+  app.use("/api/impact", impactRoutes({ config }));
   app.use("/api/dashboard", dashboardRoutes({ config }));
   app.use("/api/verification", verificationRoutes({ config }));
   app.use("/api/documents", documentRoutes({ config }));

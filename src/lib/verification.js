@@ -115,6 +115,7 @@ function planCac(business, input) {
 /** Makes the typed CAC number the profile's number, with a note in the history. */
 async function adoptCac(business, value) {
   const before = business.cacNumber;
+  if (!before && business.hasCac !== "Yes" && !business.formalisedAt) business.formalisedAt = new Date();
   business.cacNumber = value;
   business.hasCac = "Yes";
   business.verificationHistory.push({ status: business.verificationStatus, at: new Date(), note: before ? "CAC number changed after a check found it on the register" : "CAC number added after a check found it on the register" });
