@@ -5,6 +5,7 @@ import { audit } from "../models/AuditLog.js";
 import mongoose from "mongoose";
 import { z } from "zod";
 import { requireAuth, requirePasswordChanged, requireRole } from "../middleware/security.js";
+import { can, requirePermission } from "../lib/permissions.js";
 import { Business } from "../models/Business.js";
 import { PlaySubscription } from "../models/PlaySubscription.js";
 import { Payment, paymentStatuses } from "../models/Payment.js";
@@ -75,7 +76,7 @@ async function playRows({ status, provider, from, to }, limit) {
  */
 export function adminPaymentRoutes({ config }) {
   const router = Router();
-  router.use(requireAuth(config), requireRole("admin", "super_admin"), requirePasswordChanged);
+  router.use(requireAuth(config), requireRole("admin", "super_admin"), requirePasswordChanged, requirePermission("payments"));
 
   router.get("/", async (req, res) => {
     const q = querySchema.parse(req.query);
@@ -131,14 +132,14 @@ export function adminPaymentRoutes({ config }) {
           businessName: business?.businessName ?? "Business removed",
           state: business?.state ?? "",
           ownerName: user?.fullName ?? "",
-          ownerEmail: user?.email ?? "",
+          ownerEmail: can(req.user, "personal") ? (user?.email ?? "") : "",
         };
       }),
     });
   });
 
   // The same payments as a spreadsheet (every one in the range, not only the first 300).
-  router.get("/export.csv", async (req, res) => {
+  router.get("/export.csv", requirePermission("export"), async (req, res) => {
     const q = querySchema.parse(req.query);
     const { match } = filterOf(q);
     const web = q.provider === "google_play" ? [] : await Payment.find(match).sort({ paidAt: -1, createdAt: -1 }).limit(20000).lean();
@@ -165,8 +166,8 @@ export function adminPaymentRoutes({ config }) {
         { header: "LGA", value: (p) => businessOf.get(String(p.user))?.lga ?? "" },
         { header: "Sector", value: (p) => businessOf.get(String(p.user))?.sector ?? "" },
         { header: "Owner", value: (p) => userOf.get(String(p.user))?.fullName ?? "" },
-        { header: "Owner email", value: (p) => userOf.get(String(p.user))?.email ?? "" },
-        { header: "Owner phone", value: (p) => userOf.get(String(p.user))?.phone ?? "" },
+        { header: "Owner email", value: (p) => (can(req.user, "personal") ? (userOf.get(String(p.user))?.email ?? "") : "") },
+        { header: "Owner phone", value: (p) => (can(req.user, "personal") ? (userOf.get(String(p.user))?.phone ?? "") : "") },
       ],
       rows,
     );

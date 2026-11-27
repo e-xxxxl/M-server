@@ -57,31 +57,24 @@ const cacKey = (value) => cleanCac(value).replace(/[^A-Z0-9]/g, "").replace(/^0+
 const inactive = /inactive|struck|dissolved|revoked|suspended|ceased|liquidat/i;
 
 /**
- * Why a CAC check needs a reviewer, from what was kept: the name on the register did not match, or the register shows the
- * business as not active (INACTIVE, struck off, and so on), or both. Empty when it did not need a reviewer.
+ * What a reviewer should know about a CAC result, from what was kept. The company's status on the register (ACTIVE,
+ * INACTIVE, and so on) never decides the outcome: NMREP's decision is that an INACTIVE company still passes when its name
+ * matches, so the status is shown for information only. A check needs a reviewer only when the registered name does not match.
  */
 export function cacReason(check) {
-  if (check.type !== "cac" || check.status !== "Needs review") return "";
-  const nameBad = check.nameMatch === false;
+  if (check.type !== "cac") return "";
   const statusBad = inactive.test(check.companyStatus ?? "");
-  const shown = check.companyStatus ? `"${check.companyStatus}"` : "not active";
-  if (nameBad && statusBad) return `The registered name does not match the business, and the register shows the company as ${shown}.`;
-  if (statusBad) return `The registered name matches, but the register shows the company as ${shown}.`;
-  if (nameBad) return "The register shows the company as active, but the registered name does not match the business name or the owner's name.";
-  return "The register's answer needs a person to look at it.";
+  if (check.status === "Needs review") {
+    return "The registered name on the CAC register does not match the business name or the owner's name.";
+  }
+  if (check.status === "Passed" && statusBad) {
+    return `Passed. The register shows the company as "${check.companyStatus}", which does not stop a business from passing.`;
+  }
+  return "";
 }
 
-/** What the owner is told for a CAC check that needs a reviewer: the real reason, and what to do about it. */
-function cacReviewMessage(check) {
-  const nameBad = check.nameMatch === false;
-  const statusBad = inactive.test(check.companyStatus ?? "");
-  const shown = check.companyStatus ? check.companyStatus.toUpperCase() : "not active";
-  if (statusBad && !nameBad) {
-    return `We found this CAC number and the name matches, but the CAC register shows the business as ${shown}. A business that is not active on the register cannot be confirmed automatically, so NMREP staff will review it. If the status is out of date, bring it up to date with the CAC and try again.`;
-  }
-  if (statusBad && nameBad) {
-    return `We found this CAC number, but the registered name does not match your business and the CAC register shows it as ${shown}. NMREP staff will review it. Check the number, correct your business name in your profile if needed, and try again.`;
-  }
+/** What the owner is told for a CAC check that needs a reviewer: the name did not match. */
+function cacReviewMessage() {
   return "We found this CAC number, but the registered name does not clearly match your business. NMREP staff will review it. You can also correct your business name in your profile and try again.";
 }
 
@@ -137,7 +130,7 @@ export function ownerView(check) {
     status: check.status,
     maskedValue: check.maskedValue,
     checkedAt: check.checkedAt,
-    message: check.type === "cac" && check.status === "Needs review" ? cacReviewMessage(check) : (check.type === "cac" ? cacMessage : message)[check.status],
+    message: check.type === "cac" && check.status === "Needs review" ? cacReviewMessage() : (check.type === "cac" ? cacMessage : message)[check.status],
     // The CAC register is public, so the owner may be told what it shows. This is what to correct when the names differ.
     ...(check.type === "cac" && check.registeredName ? { registeredName: check.registeredName } : {}),
   };
@@ -329,9 +322,9 @@ async function runProvider(type, business, user, value) {
   if (!r.found) return { status: "Not found", reference: r.reference };
   // A business name is often registered in the owner's name, so the owner's name counts too.
   const nameMatch = matchesAny(r.company.name, [business.businessName, business.tradingName, business.ownerName, user.fullName], { dropCompanyWords: true });
-  const active = !inactive.test(r.company.status);
+  // The register's status (ACTIVE, INACTIVE...) is kept for staff to see but never changes the result.
   return {
-    status: nameMatch && active ? "Passed" : "Needs review",
+    status: nameMatch ? "Passed" : "Needs review",
     nameMatch,
     registeredName: r.company.name.slice(0, 200),
     companyStatus: r.company.status.slice(0, 40),

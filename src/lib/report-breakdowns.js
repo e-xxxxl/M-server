@@ -35,13 +35,14 @@ async function banded(expression, bands) {
  */
 export async function businessBreakdowns(now = new Date()) {
   const thisYear = now.getUTCFullYear();
-  const [lga, businessType, revenue, employees, age, jobs] = await Promise.all([
+  const [lga, businessType, revenue, employees, age, jobs, gender] = await Promise.all([
     Business.aggregate([{ $group: { _id: { state: "$state", lga: "$lga" }, count: { $sum: 1 } } }, { $sort: { count: -1, "_id.state": 1, "_id.lga": 1 } }, { $limit: 25 }]),
     Business.aggregate(group("$businessType")),
     Business.aggregate(group("$annualRevenue")),
     banded("$employees", employeeBands),
     banded({ $max: [0, { $subtract: [thisYear, "$yearEstablished"] }] }, ageBands),
     Business.aggregate([{ $group: { _id: null, total: { $sum: "$employees" } } }]),
+    Business.aggregate(group("$gender")),
   ]);
   const revenueByName = new Map(named(revenue).map((r) => [r.name, r.count]));
   return {
@@ -49,6 +50,8 @@ export async function businessBreakdowns(now = new Date()) {
     byBusinessType: named(businessType),
     // In the order of the choices on the form, with the empty ones shown, so the chart reads from small to large.
     byAnnualRevenue: [...annualRevenues.map((name) => ({ name, count: revenueByName.get(name) ?? 0 })), ...named(revenue).filter((r) => !annualRevenues.includes(r.name))],
+    // The owner's gender, from the profile. Businesses that have not said (older sign-ups) are counted as "Not set".
+    byGender: named(gender),
     byEmployees: employees,
     byBusinessAge: age,
     totalEmployees: jobs[0]?.total ?? 0,

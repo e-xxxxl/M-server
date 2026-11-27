@@ -16,6 +16,7 @@ import { Organisation } from "../models/Organisation.js";
 import { User } from "../models/User.js";
 import { ApiError } from "../middleware/errors.js";
 import { requireAuth, requirePasswordChanged, requireRole } from "../middleware/security.js";
+import { can, requirePermission } from "../lib/permissions.js";
 import { businessExportQuerySchema, idParamSchema } from "../schemas.js";
 import { lagosRange } from "../lib/date-range.js";
 import { normaliseQuestions } from "../lib/opportunity-form.js";
@@ -59,7 +60,16 @@ export function adminOpportunityRoutes({ config }) {
   router.use(requireAuth(config), requireRole("admin", "super_admin"), requirePasswordChanged);
 
   // Running any training: plan, attendance, assessment and certificates.
-  router.use("/training", trainingStaffRoutes({ scope: () => ({}), viewer: "admin" }));
+  // Training: looking is open to all staff; changing it needs the opportunities permission; the participant file needs export.
+  router.use(
+    "/training",
+    (req, res, next) => {
+      if (req.method !== "GET") return requirePermission("opportunities")(req, res, next);
+      if (req.path.endsWith("participants.csv")) return requirePermission("export")(req, res, next);
+      next();
+    },
+    trainingStaffRoutes({ scope: () => ({}), viewer: "admin" }),
+  );
 
   // ------------------------------------------------------------ opportunities
   router.get("/opportunities", async (req, res) => {
@@ -88,7 +98,7 @@ export function adminOpportunityRoutes({ config }) {
     });
   });
 
-  router.post("/opportunities", async (req, res) => {
+  router.post("/opportunities", requirePermission("opportunities"), async (req, res) => {
     const data = opportunityCreateSchema.parse(req.body);
     const opportunity = await Opportunity.create({ ...data, questions: normaliseQuestions(data.questions), createdBy: req.user._id });
     await audit(req.user, "opportunity.create", `Created opportunity "${opportunity.title}"`, { type: "opportunity", id: opportunity._id });
@@ -110,7 +120,7 @@ export function adminOpportunityRoutes({ config }) {
     });
   });
 
-  router.patch("/opportunities/:id", async (req, res) => {
+  router.patch("/opportunities/:id", requirePermission("opportunities"), async (req, res) => {
     const id = parseId(req.params.id);
     const patch = opportunityPatchSchema.parse(req.body);
     const opportunity = await Opportunity.findById(id);
@@ -133,7 +143,7 @@ export function adminOpportunityRoutes({ config }) {
   });
 
   // A partner's opportunity waits here until a platform admin approves it.
-  router.post("/opportunities/:id/approve", async (req, res) => {
+  router.post("/opportunities/:id/approve", requirePermission("opportunities"), async (req, res) => {
     const id = parseId(req.params.id);
     const opportunity = await Opportunity.findById(id);
     if (!opportunity) throw new ApiError(404, "not_found", "Not found.");
@@ -145,7 +155,7 @@ export function adminOpportunityRoutes({ config }) {
     res.json({ opportunity: opportunity.toJSON() });
   });
 
-  router.post("/opportunities/:id/return", async (req, res) => {
+  router.post("/opportunities/:id/return", requirePermission("opportunities"), async (req, res) => {
     const id = parseId(req.params.id);
     const { note } = returnSchema.parse(req.body);
     const opportunity = await Opportunity.findById(id);
@@ -226,7 +236,7 @@ export function adminOpportunityRoutes({ config }) {
           }
         : null,
       business: business ? { id: String(business._id), businessName: business.businessName } : null,
-      owner: owner ? { fullName: owner.fullName, email: owner.email, phone: owner.phone } : null,
+      owner: owner ? { fullName: owner.fullName, email: can(req.user, "personal") ? owner.email : "", phone: can(req.user, "personal") ? owner.phone : "" } : null,
       // How the business compared with the requirements when it submitted.
       fit: opportunity && application.snapshot ? evaluate(opportunity.criteria, application.snapshot) : null,
       consents: consents.map((c) => c.toJSON()),
@@ -236,7 +246,7 @@ export function adminOpportunityRoutes({ config }) {
   });
 
   // A document attached to this application, while the owner's sharing agreement is active. Every download is logged.
-  router.get("/applications/:id/documents/:docId", async (req, res) => {
+  router.get("/applications/:id/documents/:docId", requirePermission("personal"), async (req, res) => {
     const application = await Application.findById(parseId(req.params.id));
     if (!application || application.status === "Draft") throw new ApiError(404, "not_found", "Not found.");
     const docs = await visibleDocuments(application);
@@ -248,7 +258,7 @@ export function adminOpportunityRoutes({ config }) {
   });
 
 
-  router.post("/applications/:id/status", async (req, res) => {
+  router.post("/applications/:id/status", requirePermission("opportunities"), async (req, res) => {
     const { status, note } = applicationStatusSchema.parse(req.body);
     const application = await Application.findById(parseId(req.params.id));
     if (!application || application.status === "Draft") throw new ApiError(404, "not_found", "Not found.");
@@ -336,7 +346,7 @@ export function adminOpportunityRoutes({ config }) {
     res.send(csv);
   };
 
-  router.get("/export/businesses", async (req, res) => {
+  router.get("/export/businesses", requirePermission("export"), async (req, res) => {
     const f = businessExportQuerySchema.parse(req.query);
     const match = {};
     if (f.state) match.state = f.state;
@@ -369,8 +379,8 @@ export function adminOpportunityRoutes({ config }) {
         { header: "Employees", value: (b) => b.employees },
         { header: "Year established", value: (b) => b.yearEstablished },
         { header: "Owner", value: (b) => owners.get(String(b.owner))?.fullName ?? "" },
-        { header: "Owner email", value: (b) => owners.get(String(b.owner))?.email ?? "" },
-        { header: "Owner phone", value: (b) => owners.get(String(b.owner))?.phone ?? "" },
+        { header: "Owner email", value: (b) => (can(req.user, "personal") ? (owners.get(String(b.owner))?.email ?? "") : "") },
+        { header: "Owner phone", value: (b) => (can(req.user, "personal") ? (owners.get(String(b.owner))?.phone ?? "") : "") },
         { header: "Fee paid until", value: (b) => owners.get(String(b.owner))?.registrationPaidUntil ?? "" },
         { header: "Referral code", value: (b) => b.referral?.code ?? "" },
         { header: "Referred by", value: (b) => agents.get(String(b.referral?.agent)) ?? "" },
@@ -383,7 +393,7 @@ export function adminOpportunityRoutes({ config }) {
     sendCsv(res, "nmrep-businesses.csv", csv);
   });
 
-  router.get("/export/applications", async (req, res) => {
+  router.get("/export/applications", requirePermission("export"), async (req, res) => {
     const rows = await Application.find({ status: mongoose.trusted({ $in: reviewableStatuses }) }).sort({ submittedAt: -1 }).limit(20000).lean();
     const [opps, businesses] = await Promise.all([
       Opportunity.find({ _id: mongoose.trusted({ $in: rows.map((r) => r.opportunity) }) }).select("title provider organisation").lean(),

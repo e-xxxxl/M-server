@@ -21,6 +21,8 @@ function stepFor(check) {
     case "womenOwned":
     case "youthOwned":
     case "disabilityOwned":
+    case "agriculturalBusiness":
+    case "manufacturingBusiness":
     case "exports":
       return { ...base, title: check.label, detail: check.yours === "Not provided" ? "Answer this under About the business on your profile." : "Your profile says No. If that is wrong, change it under About the business.", link: PROFILE };
     case "yearsInBusiness":

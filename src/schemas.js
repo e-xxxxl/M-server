@@ -78,6 +78,8 @@ function buildShape(withDefaults) {
   ownerName: text(100),
   ownerRole: oneOf(o.ownerRoles),
   ownershipStructure: oneOf(o.ownershipStructures),
+  // The owner's gender, for NMREP's reports. Optional so older apps keep working; the website asks for it at sign-up.
+  gender: d(optionalOneOf(o.genders)),
   // Operations
   employees: intInRange(0, 100000),
   branches: optionalInt(0, 10000),
@@ -101,7 +103,8 @@ function buildShape(withDefaults) {
  * counted in the profile progress and are not shared: the business bank, the size of opportunity sought and the digital presence.
  */
 export const retiredFieldNames = ["bankName", "fundingNeeds", "website", "facebook", "instagram", "x", "tiktok"];
-export const profileFieldNames = Object.keys(buildShape(true)).filter((name) => name !== "hasCac" && name !== "hasTin" && !retiredFieldNames.includes(name));
+// The owner's gender is optional and is not counted in how complete the profile is.
+export const profileFieldNames = Object.keys(buildShape(true)).filter((name) => name !== "hasCac" && name !== "hasTin" && name !== "gender" && !retiredFieldNames.includes(name));
 
 export const businessSchema = z.object(buildShape(true)).strict();
 
@@ -127,6 +130,8 @@ const extraShape = {
   womenOwned: yesNoOrEmpty,
   youthOwned: yesNoOrEmpty,
   disabilityOwned: yesNoOrEmpty,
+  agriculturalBusiness: yesNoOrEmpty,
+  manufacturingBusiness: yesNoOrEmpty,
   exports: yesNoOrEmpty,
   latitude: coordinate("latitude", 4, 14),
   longitude: coordinate("longitude", 2.5, 15),
@@ -338,9 +343,23 @@ export const agentPatchSchema = z
   .strict()
   .refine((v) => Object.keys(v).length > 0, "Nothing to update.");
 
-export const adminCreateSchema = z.object({ fullName: text(100), email: emailSchema, phone: phoneSchema }).strict();
+const staffRoleField = z.enum(["admin", "operations"], { message: "Choose Admin or Operations." });
+const permissionsField = z.array(z.enum(["verify", "payments", "export", "opportunities", "messages", "personal"], { message: "Choose from the listed access options." })).max(6);
 
-export const adminPatchSchema = z.object({ active: z.boolean({ message: "Choose active or inactive." }) }).strict();
+/** A new administrator: their role, and optionally exactly what they may do (otherwise the role's usual access applies). */
+export const adminCreateSchema = z
+  .object({ fullName: text(100), email: emailSchema, phone: phoneSchema, staffRole: staffRoleField.default("admin"), permissions: permissionsField.optional() })
+  .strict();
+
+/** Changes to an administrator: active or not, role, and access. At least one. */
+export const adminPatchSchema = z
+  .object({
+    active: z.boolean({ message: "Choose active or inactive." }).optional(),
+    staffRole: staffRoleField.optional(),
+    permissions: permissionsField.optional(),
+  })
+  .strict()
+  .refine((v) => v.active !== undefined || v.staffRole !== undefined || v.permissions !== undefined, { message: "Nothing to change.", path: ["active"] });
 
 export const statusChangeSchema = z
   .object({

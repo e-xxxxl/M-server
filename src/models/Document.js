@@ -5,7 +5,8 @@ import mongoose from "mongoose";
  * bill, bank statement, means of identification, business plan, product catalog, audited accounts) plus the framework's
  * business licence, and "Other". "ID", "Bank Statement" and "Utility Bill" (it shows a home address) are sensitive.
  */
-export const documentKinds = [
+/** Every kind that can be on file, including the ones NMREP no longer asks for. */
+export const allDocumentKinds = [
   "CAC Certificate",
   "TIN Certificate",
   "Tax Clearance",
@@ -18,6 +19,10 @@ export const documentKinds = [
   "Audited Accounts",
   "Other",
 ];
+/** NMREP no longer takes bank statements or tax documents (decided 2026-11-27). Ones already uploaded stay and are still protected. */
+export const retiredKinds = ["TIN Certificate", "Tax Clearance", "Bank Statement"];
+/** The kinds that can be uploaded now and asked for by an opportunity. */
+export const documentKinds = allDocumentKinds.filter((k) => !retiredKinds.includes(k));
 export const sensitiveKinds = ["ID", "Bank Statement", "Utility Bill"];
 
 /**
@@ -29,7 +34,7 @@ const documentSchema = new mongoose.Schema(
   {
     owner: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
     business: { type: mongoose.Schema.Types.ObjectId, ref: "Business", required: true },
-    kind: { type: String, enum: documentKinds, required: true },
+    kind: { type: String, enum: allDocumentKinds, required: true },
     title: { type: String, required: true, trim: true, maxlength: 100 },
     // Decided from the first bytes of the file, never from what the client claimed.
     mime: { type: String, enum: ["application/pdf", "image/jpeg", "image/png"], required: true },

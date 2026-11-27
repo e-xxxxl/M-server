@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import { criterionKeys } from "../lib/eligibility.js";
 import { criterionLevels, opportunityStatuses, opportunityTags, opportunityTypes, trainingModes } from "../lib/opportunity-constants.js";
-import { documentKinds } from "./Document.js";
+import { allDocumentKinds } from "./Document.js";
 
 const criterionSchema = new mongoose.Schema(
   {
@@ -55,7 +55,7 @@ const opportunitySchema = new mongoose.Schema(
     // Categories on top of the type (see opportunityTags). Opportunities made before tags existed have none.
     tags: { type: [{ type: String, enum: opportunityTags }], default: [] },
     // Kinds of wallet document the applicant must attach to submit (see documentKinds, never "Other").
-    requiredDocuments: { type: [{ type: String, enum: documentKinds.filter((k) => k !== "Other") }], default: [] },
+    requiredDocuments: { type: [{ type: String, enum: allDocumentKinds.filter((k) => k !== "Other") }], default: [] },
     // Questions the applicant answers when applying. Each has a real _id so answers stay tied to it when the text is edited.
     questions: {
       type: [new mongoose.Schema({ text: { type: String, required: true, trim: true, maxlength: 200 }, required: { type: Boolean, default: false } })],

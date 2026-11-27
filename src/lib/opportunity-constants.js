@@ -74,7 +74,8 @@ export const beneficiaryStatuses = ["Approved", "Completed"];
 
 /**
  * Organisation types from the framework document. Training providers have the training tools (see lib/training.js).
- * Opportunity partners have their own tools planned for a later phase, so they cannot be created yet.
+ * Opportunity partners (decided 2026-11-27) use the same partner portal as the others and stay with opportunities only: their
+ * own opportunities, the businesses that applied, and who completed and was certified. No disbursement or funding records.
  */
 export const organisationTypes = [
   "Government Ministry",
@@ -87,7 +88,7 @@ export const organisationTypes = [
   "Training Provider",
   "Opportunity Partner",
 ];
-export const organisationTypesAvailable = organisationTypes.filter((t) => t !== "Opportunity Partner");
+export const organisationTypesAvailable = [...organisationTypes];
 
 /** How a training is delivered. */
 export const trainingModes = ["In person", "Online", "Hybrid"];

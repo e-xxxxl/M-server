@@ -32,6 +32,7 @@ export const sectors = [
   "Other",
 ];
 
+export const genders = ["Male", "Female", "Prefer not to say"];
 export const ownerRoles = ["Owner", "Director", "Owner and director"];
 export const ownershipStructures = ["Sole owner", "Partnership", "Shareholders", "Other"];
 

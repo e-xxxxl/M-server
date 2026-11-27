@@ -264,7 +264,8 @@ describe("reference data", () => {
     assert.match(res.headers.get("cache-control"), /public, max-age=3600/);
     assert.ok(res.headers.get("etag"));
     const data = await res.json();
-    assert.equal(data.version, 3);
+    assert.equal(data.version, 4);
+    assert.deepEqual(data.genders, options.genders);
     assert.ok(data.opportunityTagGroups.some((g) => g.tags.includes("Equipment financing")));
     assert.equal(data.maxOpportunityTags, 5);
     for (const key of ["businessTypes", "sectors", "states", "ownerRoles", "ownershipStructures", "annualRevenues", "existingLoans", "fundingNeeds", "yesNo", "verificationStatuses"]) {

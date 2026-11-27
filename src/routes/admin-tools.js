@@ -15,6 +15,7 @@ import { Session } from "../models/Session.js";
 import { User } from "../models/User.js";
 import { ApiError } from "../middleware/errors.js";
 import { requireAuth, requirePasswordChanged, requireRole } from "../middleware/security.js";
+import { requirePermission } from "../lib/permissions.js";
 import { sectors, states, verificationStatuses } from "../options.js";
 import { blankToUndefined, idParamSchema, intInRange, oneOf, optionalText, text } from "../schemas.js";
 
@@ -114,7 +115,7 @@ export function adminToolsRoutes({ config }) {
 
   // ------------------------------------------------------------ owner accounts
   // Revoking blocks sign-in and ends every session at once. Restoring lets the owner in again. Nothing is deleted.
-  router.patch("/businesses/:id/account", async (req, res) => {
+  router.patch("/businesses/:id/account", requirePermission("verify"), async (req, res) => {
     const { active, reason } = accountSchema.parse(req.body);
     const business = await Business.findById(parseId(req.params.id));
     if (!business) throw new ApiError(404, "not_found", "Not found.");
@@ -141,7 +142,7 @@ export function adminToolsRoutes({ config }) {
     res.json({ items: items.map((b) => ({ ...b.toJSON(), read: readBy.get(String(b._id)) ?? 0 })) });
   });
 
-  router.post("/broadcasts", async (req, res) => {
+  router.post("/broadcasts", requirePermission("messages"), async (req, res) => {
     const { title, body, link, audience, sendEmail, preview } = broadcastSchema.parse(req.body);
     const owners = await audienceOwnerIds(audience);
     if (preview) return res.json({ recipients: owners.length });
@@ -177,7 +178,7 @@ export function adminToolsRoutes({ config }) {
     });
   });
 
-  router.get("/opportunities/:id/matches.csv", async (req, res) => {
+  router.get("/opportunities/:id/matches.csv", requirePermission("export"), async (req, res) => {
     const { label } = matchQuerySchema.parse(req.query);
     const opportunity = await Opportunity.findById(parseId(req.params.id));
     if (!opportunity) throw new ApiError(404, "not_found", "Not found.");
@@ -203,7 +204,7 @@ export function adminToolsRoutes({ config }) {
   });
 
   // ------------------------------------------------------------ archive and delete
-  router.post("/opportunities/:id/archive", async (req, res) => {
+  router.post("/opportunities/:id/archive", requirePermission("opportunities"), async (req, res) => {
     const opportunity = await Opportunity.findById(parseId(req.params.id));
     if (!opportunity) throw new ApiError(404, "not_found", "Not found.");
     if (opportunity.status === "Open" || opportunity.status === "Pending Approval") {
@@ -215,7 +216,7 @@ export function adminToolsRoutes({ config }) {
     res.json({ opportunity: opportunity.toJSON() });
   });
 
-  router.post("/opportunities/:id/unarchive", async (req, res) => {
+  router.post("/opportunities/:id/unarchive", requirePermission("opportunities"), async (req, res) => {
     const opportunity = await Opportunity.findById(parseId(req.params.id));
     if (!opportunity) throw new ApiError(404, "not_found", "Not found.");
     opportunity.archivedAt = null;
@@ -225,7 +226,7 @@ export function adminToolsRoutes({ config }) {
   });
 
   // Only an opportunity nobody has applied to can be deleted. Anything else is archived, so no application is orphaned.
-  router.delete("/opportunities/:id", async (req, res) => {
+  router.delete("/opportunities/:id", requirePermission("opportunities"), async (req, res) => {
     const opportunity = await Opportunity.findById(parseId(req.params.id));
     if (!opportunity) throw new ApiError(404, "not_found", "Not found.");
     if (opportunity.status === "Open") throw new ApiError(409, "still_open", "Close it before deleting it.");

@@ -60,6 +60,10 @@ const businessSchema = new mongoose.Schema(
     womenOwned: str(3),
     youthOwned: str(3),
     disabilityOwned: str(3),
+    agriculturalBusiness: str(3),
+    manufacturingBusiness: str(3),
+    // The owner's gender: Male, Female or Prefer not to say. Used for reports, not for eligibility.
+    gender: str(20),
     exports: str(3),
     // Where the business is, in decimal degrees (inside Nigeria). Shared only under "profile".
     latitude: { type: Number, default: null, min: 4, max: 14 },

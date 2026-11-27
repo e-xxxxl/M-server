@@ -16,6 +16,7 @@ import { Product } from "../models/Product.js";
 import { sendProductImage } from "./products.js";
 import { ApiError } from "../middleware/errors.js";
 import { requireAuth, requirePasswordChanged, requireRole } from "../middleware/security.js";
+import { can, permissionsOf, requirePermission } from "../lib/permissions.js";
 import {
   adminCreateSchema,
   adminPatchSchema,
@@ -181,6 +182,8 @@ export function adminRoutes({ config }) {
 
     const [result] = await Business.aggregate(pipeline);
     for (const item of result.items) item.paidVia = item.registrationPaidUntil ? item.paidVia || "web" : "";
+    // Staff without the personal details permission see the business, not how to reach its owner.
+    if (!can(req.user, "personal")) for (const item of result.items) item.email = "";
     res.json({ items: result.items, total: result.total[0]?.n ?? 0, page, pageSize: PAGE_SIZE });
   });
 
@@ -199,7 +202,7 @@ export function adminRoutes({ config }) {
     res.json({
       business: business.toJSON(),
       products,
-      owner: ownerSummary(owner),
+      owner: can(req.user, "personal") ? ownerSummary(owner) : owner ? { ...ownerSummary(owner), email: "", phone: "" } : null,
       verificationChecks,
       // The documents the owner chose to show reviewers for verification (the document check).
       verificationDocuments: submitted.documents.map(sharedView),
@@ -212,7 +215,7 @@ export function adminRoutes({ config }) {
   });
 
   // A document the owner chose to show reviewers. Every download is written to the activity log.
-  router.get("/businesses/:id/documents/:docId", async (req, res) => {
+  router.get("/businesses/:id/documents/:docId", requirePermission("personal"), async (req, res) => {
     const business = await Business.findById(parseId(req.params.id));
     if (!business) throw new ApiError(404, "not_found", "Not found.");
     const { documents } = await submittedDocuments(business);
@@ -241,7 +244,7 @@ export function adminRoutes({ config }) {
   });
 
   // Manual review: the status shown on the owner's dashboard. Verified businesses receive their NMREP Business ID.
-  router.post("/businesses/:id/status", async (req, res) => {
+  router.post("/businesses/:id/status", requirePermission("verify"), async (req, res) => {
     const id = parseId(req.params.id);
     const { status, note } = statusChangeSchema.parse(req.body);
     const business = await Business.findById(id);
@@ -291,7 +294,7 @@ export function adminRoutes({ config }) {
     });
   });
 
-  router.post("/agents", async (req, res) => {
+  router.post("/agents", requirePermission("opportunities"), async (req, res) => {
     const data = agentCreateSchema.parse(req.body);
     let agent;
     // A code collision is very unlikely, but is simply retried with a new code.
@@ -325,7 +328,7 @@ export function adminRoutes({ config }) {
     });
   });
 
-  router.patch("/agents/:id", async (req, res) => {
+  router.patch("/agents/:id", requirePermission("opportunities"), async (req, res) => {
     const id = parseId(req.params.id);
     const patch = agentPatchSchema.parse(req.body);
     const agent = await Agent.findById(id);
@@ -353,7 +356,7 @@ export function adminRoutes({ config }) {
   });
 
   router.post("/admins", superOnly, async (req, res) => {
-    const data = adminCreateSchema.parse(req.body);
+    const { permissions, ...data } = adminCreateSchema.parse(req.body);
     if (await User.exists({ email: data.email })) {
       throw new ApiError(409, "email_taken", "An account with this email address already exists.", {
         email: "An account with this email address already exists.",
@@ -365,10 +368,13 @@ export function adminRoutes({ config }) {
       ...data,
       passwordHash: await hashPassword(temporaryPassword, config.bcryptRounds),
       role: "admin",
+      // Access the super admin picked by hand, or the role's usual set when none was picked.
+      permissionsCustom: permissions !== undefined,
+      permissions: permissions ?? [],
       mustChangePassword: true,
       createdBy: req.user._id,
     });
-    await audit(req.user, "admin.create", `Created admin account for ${admin.fullName}`, { type: "user", id: admin._id });
+    await audit(req.user, "admin.create", `Created ${admin.staffRole} account for ${admin.fullName} with access to: ${permissionsOf(admin).join(", ") || "nothing"}`, { type: "user", id: admin._id });
     res.status(201).json({ admin: admin.toJSON(), temporaryPassword });
   });
 
@@ -380,12 +386,30 @@ export function adminRoutes({ config }) {
   }
 
   router.patch("/admins/:id", superOnly, async (req, res) => {
-    const { active } = adminPatchSchema.parse(req.body);
+    const { active, staffRole, permissions } = adminPatchSchema.parse(req.body);
     const target = await plainAdmin(req.params.id);
-    target.active = active;
+    const notes = [];
+    if (active !== undefined) {
+      target.active = active;
+      notes.push(active ? "reactivated" : "deactivated");
+    }
+    if (staffRole !== undefined && staffRole !== target.staffRole) {
+      target.staffRole = staffRole;
+      // A new role brings that role's usual access, unless the access is set by hand in the same change.
+      if (permissions === undefined) {
+        target.permissionsCustom = false;
+        target.permissions = [];
+      }
+      notes.push(`role changed to ${staffRole}`);
+    }
+    if (permissions !== undefined) {
+      target.permissionsCustom = true;
+      target.permissions = permissions;
+      notes.push(`access set to: ${permissions.join(", ") || "nothing"}`);
+    }
     await target.save();
-    if (!active) await Session.deleteMany({ user: target._id }); // signed out everywhere immediately
-    await audit(req.user, "admin.update", `${active ? "Reactivated" : "Deactivated"} admin account for ${target.fullName}`, { type: "user", id: target._id });
+    if (active === false) await Session.deleteMany({ user: target._id }); // signed out everywhere immediately
+    await audit(req.user, "admin.update", `Updated admin account for ${target.fullName}: ${notes.join("; ") || "no change"}`, { type: "user", id: target._id });
     res.json({ admin: target.toJSON() });
   });
 

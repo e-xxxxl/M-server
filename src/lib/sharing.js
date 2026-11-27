@@ -43,8 +43,8 @@ export const sharingCategories = {
     label: "Full business profile",
     required: false,
     description:
-      "Business address, CAC and TIN numbers, owner role, number of branches, bank name, existing loans, monthly revenue, whether the business is women, youth or disability owned or exports, and its map position and social media handles.",
-    fields: ["address", "ownerName", "ownerRole", "cacNumber", "tin", "branches", "existingLoans", "monthlyRevenue", "womenOwned", "youthOwned", "disabilityOwned", "exports", "latitude", "longitude", "facebook", "instagram", "x", "tiktok"],
+      "Business address, CAC and TIN numbers, owner role, number of branches, bank name, existing loans, monthly revenue, whether the business is women, youth or disability owned, agricultural, manufacturing or exports, the owner's gender, and its map position and social media handles.",
+    fields: ["address", "ownerName", "ownerRole", "cacNumber", "tin", "branches", "existingLoans", "monthlyRevenue", "womenOwned", "youthOwned", "disabilityOwned", "agriculturalBusiness", "manufacturingBusiness", "gender", "exports", "latitude", "longitude", "facebook", "instagram", "x", "tiktok"],
   },
 };
 

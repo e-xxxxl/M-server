@@ -2,6 +2,7 @@ import { Router } from "express";
 import mongoose from "mongoose";
 import { z } from "zod";
 import { requireAuth, requirePasswordChanged, requireRole } from "../middleware/security.js";
+import { can } from "../lib/permissions.js";
 import { Business } from "../models/Business.js";
 import { User } from "../models/User.js";
 import { VerificationCheck } from "../models/VerificationCheck.js";
@@ -66,8 +67,8 @@ export function adminVerificationRoutes({ config }) {
         updatedAt: b.updatedAt,
         createdAt: b.createdAt,
         ownerName: owner?.fullName ?? b.ownerName,
-        ownerEmail: owner?.email ?? "",
-        ownerPhone: owner?.phone ?? "",
+        ownerEmail: can(req.user, "personal") ? (owner?.email ?? "") : "",
+        ownerPhone: can(req.user, "personal") ? (owner?.phone ?? "") : "",
         registrationPaidUntil: owner?.registrationPaidUntil ?? null,
         paidVia: owner?.registrationPaidUntil ? owner.subscriptionSource || "web" : "",
         emailVerified: Boolean(owner?.emailVerifiedAt),

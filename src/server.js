@@ -13,6 +13,8 @@ import { configureAlatpay } from "./lib/alatpay.js";
 import { configurePaystack } from "./lib/paystack.js";
 import { configurePush, push } from "./lib/push.js";
 import { configurePlay, play } from "./lib/play-billing.js";
+import { retiredKinds } from "./models/Document.js";
+import { Opportunity } from "./models/Opportunity.js";
 import { seedLgas } from "./lib/lgas.js";
 import { applyRenames } from "./lib/renames.js";
 import { isConfigured } from "./lib/gateways.js";
@@ -78,6 +80,9 @@ if (config.isProd && !isConfigured(config, config.payments.gateway)) {
 if (!config.notifications.unsubscribeSecret) {
   console.warn("UNSUBSCRIBE_SECRET is not set: the Stop these emails links stop working whenever the server restarts. Set a long random value.");
 }
+// Bank statements and tax documents are no longer asked for: an opportunity that still lists one stops requiring it, so no
+// owner is held back by a document that can no longer be uploaded.
+await Opportunity.updateMany({}, { $pull: { requiredDocuments: mongoose.trusted({ $in: retiredKinds }) } }).catch(() => null);
 const phoneKeys = await backfillPhoneKeys();
 if (phoneKeys > 0) console.log(`Added a phone sign-in key to ${phoneKeys} existing account${phoneKeys === 1 ? "" : "s"}.`);
 if (!configureDocumentStorage(config).enabled) {

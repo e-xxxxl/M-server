@@ -112,24 +112,19 @@ describe("the payments export and time range", () => {
   });
 });
 
-describe("the CAC result says the real reason", () => {
-  const check = (over) => ({ type: "cac", status: "Needs review", nameMatch: true, companyStatus: "INACTIVE", registeredName: "HOMYDAZE ACADEMY", maskedValue: "***4035", checkedAt: new Date(), ...over });
+describe("the CAC result and the company's status on the register", () => {
+  const check = (over) => ({ type: "cac", status: "Passed", nameMatch: true, companyStatus: "INACTIVE", registeredName: "HOMYDAZE ACADEMY", maskedValue: "***4035", checkedAt: new Date(), ...over });
 
-  it("a matching name with an INACTIVE company says it is the status, not the name", () => {
+  it("an INACTIVE company that matches passes: the status is shown to staff, never held against the owner", () => {
     const view = reviewerView(check());
-    assert.match(view.reason, /name matches, but the register shows the company as "INACTIVE"/);
-    assert.match(view.message, /name matches, but the CAC register shows the business as INACTIVE/);
-    assert.ok(!/name does not/i.test(view.message));
+    assert.match(view.reason, /Passed\. The register shows the company as "INACTIVE"/);
+    assert.equal(view.message, "Your CAC registration was found and the name matches.");
   });
 
-  it("a name that does not match, with an active company, says it is the name", () => {
-    const view = reviewerView(check({ nameMatch: false, companyStatus: "ACTIVE" }));
-    assert.match(view.reason, /active, but the registered name does not match/);
+  it("only a name that does not match needs a reviewer, and says so", () => {
+    const view = reviewerView(check({ status: "Needs review", nameMatch: false, companyStatus: "ACTIVE" }));
+    assert.match(view.reason, /registered name .* does not match/);
     assert.match(view.message, /registered name does not clearly match/);
-  });
-
-  it("both problems are both named, and a passed check has no reason", () => {
-    assert.match(reviewerView(check({ nameMatch: false })).reason, /does not match the business, and the register shows/);
     assert.equal(cacReason(check({ status: "Passed", companyStatus: "ACTIVE" })), "");
   });
 });

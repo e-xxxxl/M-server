@@ -3,6 +3,7 @@ import { z } from "zod";
 import { mailer } from "../lib/mailer.js";
 import { ApiError } from "../middleware/errors.js";
 import { requireAuth, requirePasswordChanged, requireRole } from "../middleware/security.js";
+import { requirePermission } from "../lib/permissions.js";
 import { audit } from "../models/AuditLog.js";
 import { ContactMessage } from "../models/ContactMessage.js";
 import { idParamSchema } from "../schemas.js";
@@ -51,7 +52,7 @@ export function contactRoutes({ config, limiter }) {
     res.json({ items, open: await ContactMessage.countDocuments({ handled: false }) });
   });
 
-  staff.post("/:id/handled", async (req, res) => {
+  staff.post("/:id/handled", requirePermission("messages"), async (req, res) => {
     const parsed = idParamSchema.safeParse(req.params.id);
     const message = parsed.success ? await ContactMessage.findById(parsed.data) : null;
     if (!message) throw new ApiError(404, "not_found", "Not found.");

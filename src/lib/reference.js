@@ -3,7 +3,7 @@ import { applicationStatuses, interestAreas, maxOpportunityTags, opportunityTagG
 import { sharingCategories } from "./sharing.js";
 
 /** Bumped when a list changes in a way an app should notice. The app can cache the data and compare. */
-export const REFERENCE_VERSION = 3;
+export const REFERENCE_VERSION = 4;
 
 /** Every list the API accepts or returns, in one place. */
 export function referenceData() {
@@ -12,6 +12,7 @@ export function referenceData() {
     businessTypes: options.businessTypes,
     sectors: options.sectors,
     states: options.states,
+    genders: options.genders,
     ownerRoles: options.ownerRoles,
     ownershipStructures: options.ownershipStructures,
     annualRevenues: options.annualRevenues,

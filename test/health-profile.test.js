@@ -103,7 +103,7 @@ describe("the health profile", () => {
     const o = await owner();
     let hp = (await call("GET", "/api/health-profile", { cookie: o.cookie })).json;
     assert.equal(area(hp, "documents").done, 0);
-    assert.equal(area(hp, "documents").total, 10);
+    assert.equal(area(hp, "documents").total, 7, "bank statements and tax documents are no longer asked for");
     assert.equal(area(hp, "documents").status, "To do");
     await addDocument(o, "CAC Certificate");
     await addDocument(o, "Other");
@@ -111,7 +111,8 @@ describe("the health profile", () => {
     assert.equal(item(hp, "documents", "cac-certificate").done, true);
     assert.equal(area(hp, "documents").done, 1, "'Other' is not one of the six");
     assert.equal(area(hp, "documents").status, "In progress");
-    assert.deepEqual(item(hp, "documents", "tax-clearance").link, { screen: "documents" });
+    assert.deepEqual(item(hp, "documents", "business-plan").link, { screen: "documents" });
+    assert.equal(item(hp, "documents", "tax-clearance"), undefined, "retired kinds are not on the checklist");
   });
 
   it("recommends nothing: next steps were removed", async () => {

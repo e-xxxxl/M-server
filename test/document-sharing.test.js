@@ -201,7 +201,7 @@ describe("telling the owner when a document is opened", () => {
   });
 
   it("calls a sensitive document only 'one of your documents' in the notice", async () => {
-    const { p, o, doc, applicationId } = await shared({}, { kind: "Bank Statement", title: "March" });
+    const { p, o, doc, applicationId } = await shared({}, { kind: "Utility Bill", title: "March" });
     await open(p, applicationId, doc.id);
     const notice = await Notification.findOne({ user: o.id, title: /opened/ });
     assert.equal(notice.title, `${p.name} opened one of your documents`);

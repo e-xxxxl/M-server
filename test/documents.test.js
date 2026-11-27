@@ -184,7 +184,7 @@ describe("the owner's wallet", () => {
     const id = await upload(o, { kind: "ID" });
     assert.equal(id.json.document.title, "ID");
     assert.equal(id.json.document.sensitive, true);
-    assert.equal((await upload(o, { kind: "Bank Statement", title: "March" })).json.document.sensitive, true);
+    assert.equal((await upload(o, { kind: "Utility Bill", title: "March" })).json.document.sensitive, true);
     const notMultipart = await call("POST", "/api/documents", { cookie: o.cookie, body: { kind: "ID" } });
     assert.equal(notMultipart.status, 415);
     assert.equal(notMultipart.json.error.code, "unsupported_media");
@@ -258,7 +258,7 @@ describe("sharing with an organisation", () => {
     const opportunity = await openOpportunity(p);
     const o = await owner();
     const shared = (await upload(o, { kind: "CAC Certificate", title: "CAC", bytes: pdf("shared") })).json.document;
-    const kept = (await upload(o, { kind: "Bank Statement", title: "Statement", bytes: pdf("kept private") })).json.document;
+    const kept = (await upload(o, { kind: "Utility Bill", title: "Statement", bytes: pdf("kept private") })).json.document;
     const stranger = await owner();
     const foreign = (await upload(stranger)).json.document;
 
@@ -429,7 +429,7 @@ describe("document check for verification", () => {
     assert.ok(log, "the download is recorded");
 
     // A document that was not chosen cannot be opened, and nobody else can.
-    const other = await upload(o, { kind: "Tax Clearance", title: "Not shared" });
+    const other = await upload(o, { kind: "Product Catalog", title: "Not shared" });
     assert.equal((await download(`/api/admin/businesses/${bizId}/documents/${other.json.document.id}`, admin)).status, 404);
     assert.equal((await download(`/api/admin/businesses/${bizId}/documents/${cac.json.document.id}`, o.cookie)).status, 403);
 
@@ -441,5 +441,20 @@ describe("document check for verification", () => {
     assert.equal(ended.status, 200);
     assert.deepEqual(ended.json.documents.shared, []);
     assert.equal((await download(`/api/admin/businesses/${bizId}/documents/${cac.json.document.id}`, admin)).status, 404);
+  });
+});
+
+describe("bank statements and tax documents are no longer taken", () => {
+  it("cannot be uploaded, are not offered in the list of kinds, and the checklist does not count them", async () => {
+    const o = await owner();
+    for (const kind of ["Bank Statement", "Tax Clearance", "TIN Certificate"]) {
+      const res = await upload(o, { kind, title: "Retired" });
+      assert.equal(res.status, 422, kind);
+    }
+    assert.equal((await upload(o, { kind: "Business Plan", title: "Plan" })).status, 201, "other kinds still work");
+    const list = await call("GET", "/api/documents", { cookie: o.cookie });
+    const offered = list.json.kinds.map((k) => k.kind);
+    assert.ok(!offered.includes("Bank Statement") && !offered.includes("Tax Clearance") && !offered.includes("TIN Certificate"));
+    assert.ok(offered.includes("CAC Certificate") && offered.includes("Audited Accounts"));
   });
 });

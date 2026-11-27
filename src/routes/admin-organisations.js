@@ -10,6 +10,7 @@ import { Session } from "../models/Session.js";
 import { User } from "../models/User.js";
 import { ApiError } from "../middleware/errors.js";
 import { requireAuth, requirePasswordChanged, requireRole } from "../middleware/security.js";
+import { requirePermission } from "../lib/permissions.js";
 import { idParamSchema } from "../schemas.js";
 import { organisationCreateSchema, organisationPatchSchema, partnerUserCreateSchema, partnerUserPatchSchema } from "../schemas-opportunities.js";
 
@@ -50,7 +51,7 @@ export function adminOrganisationRoutes({ config }) {
     });
   });
 
-  router.post("/organisations", async (req, res) => {
+  router.post("/organisations", requirePermission("opportunities"), async (req, res) => {
     const data = organisationCreateSchema.parse(req.body);
     let org;
     try {
@@ -76,7 +77,7 @@ export function adminOrganisationRoutes({ config }) {
     });
   });
 
-  router.patch("/organisations/:id", async (req, res) => {
+  router.patch("/organisations/:id", requirePermission("opportunities"), async (req, res) => {
     const patch = organisationPatchSchema.parse(req.body);
     const org = await findOrganisation(req.params.id);
     Object.assign(org, patch);
@@ -97,7 +98,7 @@ export function adminOrganisationRoutes({ config }) {
   });
 
   // ------------------------------------------------------------ partner people
-  router.post("/organisations/:id/users", async (req, res) => {
+  router.post("/organisations/:id/users", requirePermission("opportunities"), async (req, res) => {
     const org = await findOrganisation(req.params.id);
     const data = partnerUserCreateSchema.parse(req.body);
     if (await User.exists({ email: data.email })) {
@@ -125,7 +126,7 @@ export function adminOrganisationRoutes({ config }) {
     return user;
   };
 
-  router.patch("/partner-users/:id", async (req, res) => {
+  router.patch("/partner-users/:id", requirePermission("opportunities"), async (req, res) => {
     const { active } = partnerUserPatchSchema.parse(req.body);
     const user = await partnerUser(req.params.id);
     user.active = active;
@@ -135,7 +136,7 @@ export function adminOrganisationRoutes({ config }) {
     res.json({ user: user.toJSON() });
   });
 
-  router.post("/partner-users/:id/reset-password", async (req, res) => {
+  router.post("/partner-users/:id/reset-password", requirePermission("opportunities"), async (req, res) => {
     const user = await partnerUser(req.params.id);
     const temporaryPassword = newTemporaryPassword();
     user.passwordHash = await hashPassword(temporaryPassword, config.bcryptRounds);

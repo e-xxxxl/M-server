@@ -147,28 +147,28 @@ describe("required documents", () => {
 
     const o = await owner();
     await addDocument(o, "CAC Certificate");
-    const id = await makeOpportunity({ requiredDocuments: ["CAC Certificate", "Tax Clearance", "CAC Certificate"] });
+    const id = await makeOpportunity({ requiredDocuments: ["CAC Certificate", "Business Plan", "CAC Certificate"] });
     const res = await call("GET", `/api/opportunities/${id}`, { cookie: o.cookie, origin: null });
-    assert.deepEqual(res.json.opportunity.requiredDocuments, ["CAC Certificate", "Tax Clearance"], "listed once each");
-    assert.deepEqual(res.json.documentsNeeded, [{ kind: "CAC Certificate", inWallet: true }, { kind: "Tax Clearance", inWallet: false }]);
+    assert.deepEqual(res.json.opportunity.requiredDocuments, ["CAC Certificate", "Business Plan"], "listed once each");
+    assert.deepEqual(res.json.documentsNeeded, [{ kind: "CAC Certificate", inWallet: true }, { kind: "Business Plan", inWallet: false }]);
   });
 
   it("a submission must attach a document of every required kind, a draft need not", async () => {
     const o = await owner();
     const cac = await addDocument(o, "CAC Certificate");
-    const tax = await addDocument(o, "Tax Clearance");
-    const id = await makeOpportunity({ requiredDocuments: ["CAC Certificate", "Tax Clearance"] });
+    const tax = await addDocument(o, "Business Plan");
+    const id = await makeOpportunity({ requiredDocuments: ["CAC Certificate", "Business Plan"] });
 
     assert.equal((await apply(o, id, { message: "draft" })).status, 201, "a draft needs no documents");
 
     const none = await apply(o, id, { submit: true, consent: { summary: true } });
     assert.equal(none.status, 422);
     assert.equal(none.json.error.code, "documents_required");
-    assert.match(none.json.error.fields.documentIds, /CAC Certificate, Tax Clearance/);
+    assert.match(none.json.error.fields.documentIds, /CAC Certificate, Business Plan/);
 
     const one = await apply(o, id, { submit: true, consent: { summary: true, documents: true }, documentIds: [cac] });
     assert.equal(one.status, 422);
-    assert.match(one.json.error.fields.documentIds, /Tax Clearance/);
+    assert.match(one.json.error.fields.documentIds, /Business Plan/);
     assert.ok(!one.json.error.fields.documentIds.includes("CAC Certificate"), "only the missing kind is named");
 
     const both = await apply(o, id, { submit: true, consent: { summary: true, documents: true }, documentIds: [cac, tax] });

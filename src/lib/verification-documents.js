@@ -5,7 +5,7 @@ import { documentStorage } from "./document-storage.js";
 import { sharedView } from "./documents.js";
 
 /** The kinds of document that help a reviewer most. The owner may choose any document in the wallet. */
-export const suggestedKinds = ["CAC Certificate", "ID", "TIN Certificate", "Tax Clearance", "Utility Bill"];
+export const suggestedKinds = ["CAC Certificate", "ID", "Utility Bill"];
 
 /** The documents shared with reviewers now: the ones chosen, that still exist and belong to the owner. */
 export async function submittedDocuments(business) {

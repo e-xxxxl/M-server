@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { phoneKey } from "../lib/phone-key.js";
+import { permissionsOf } from "../lib/permissions.js";
 
 export const roles = ["msme_owner", "admin", "super_admin", "partner"];
 
@@ -34,6 +35,11 @@ const userSchema = new mongoose.Schema(
     subscriptionSource: { type: String, enum: ["", "web", "google_play", "app_store"], default: "" },
     subscriptionProductId: { type: String, default: "" },
     subscriptionAutoRenewing: { type: Boolean, default: false },
+    // Staff only. "admin" or "operations", and what the account may do (see lib/permissions.js). While permissionsCustom is
+    // false the role's usual set applies; when a super admin picks permissions by hand it is true and the list is used.
+    staffRole: { type: String, enum: ["admin", "operations"], default: "admin" },
+    permissionsCustom: { type: Boolean, default: false },
+    permissions: { type: [String], default: [] },
     // Optional two-factor sign-in for staff (see lib/two-factor.js). The secret is stored encrypted, never in clear.
     twoFactorEnabled: { type: Boolean, default: false },
     twoFactorSecret: { type: String, default: "", select: false },
@@ -46,7 +52,12 @@ const userSchema = new mongoose.Schema(
   {
     timestamps: true,
     toJSON: {
-      transform(_doc, ret) {
+      transform(doc, ret) {
+        // What a staff account may do, worked out from its role and choices. Owners have none.
+        if (doc.role === "admin" || doc.role === "super_admin") ret.permissions = permissionsOf(doc);
+        else delete ret.permissions;
+        if (doc.role !== "admin") delete ret.staffRole;
+        delete ret.permissionsCustom;
         ret.id = String(ret._id);
         if (ret.organisation) ret.organisation = String(ret.organisation);
         else delete ret.organisation;

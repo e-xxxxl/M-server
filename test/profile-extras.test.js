@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import { createDocumentStorage, setDocumentStorage } from "../src/lib/document-storage.js";
+import { criterionKeys, evaluate } from "../src/lib/eligibility.js";
 import { businessSizeOf } from "../src/models/Business.js";
 import { client, ORIGIN, registrationBody, startTestServer } from "./helpers.js";
 import { createStaff, logIn } from "./staff-helpers.js";
@@ -231,5 +232,48 @@ describe("ownership flags and the map position", () => {
     detail = (await call("GET", `/api/opportunities/${id}`, { cookie: o.cookie })).json;
     assert.equal(detail.fit.checks[0].met, true);
     assert.equal(detail.howToQualify.ready, true);
+  });
+});
+
+describe("agricultural and manufacturing flags, and the owner's gender", () => {
+  it("are saved on the profile, can be cleared, and refuse nonsense", async () => {
+    const o = await owner();
+    const res = await call("PATCH", "/api/business", { cookie: o.cookie, body: { agriculturalBusiness: "Yes", manufacturingBusiness: "No", gender: "Female" } });
+    assert.equal(res.status, 200, JSON.stringify(res.json));
+    assert.deepEqual([res.json.business.agriculturalBusiness, res.json.business.manufacturingBusiness, res.json.business.gender], ["Yes", "No", "Female"]);
+    const cleared = await call("PATCH", "/api/business", { cookie: o.cookie, body: { agriculturalBusiness: "", gender: "" } });
+    assert.equal(cleared.json.business.agriculturalBusiness, "");
+    assert.equal(cleared.json.business.gender, "");
+    for (const body of [{ agriculturalBusiness: "Maybe" }, { manufacturingBusiness: 1 }, { gender: "Other" }]) {
+      assert.equal((await call("PATCH", "/api/business", { cookie: o.cookie, body })).status, 422, JSON.stringify(body));
+    }
+  });
+
+  it("sign-up takes the gender, and an app that does not send it still signs up", async () => {
+    const withGender = await call("POST", "/api/auth/register", { body: registrationBody({ business: { gender: "Male" } }) });
+    assert.equal(withGender.status, 201, withGender.text);
+    assert.equal(withGender.json.business.gender, "Male");
+    const without = await call("POST", "/api/auth/register", { body: registrationBody() });
+    assert.equal(without.status, 201);
+    assert.equal(without.json.business.gender ?? "", "");
+    const bad = await call("POST", "/api/auth/register", { body: registrationBody({ business: { gender: "Robot" } }) });
+    assert.equal(bad.status, 422);
+  });
+
+  it("work as eligibility rules for an opportunity", async () => {
+    assert.ok(criterionKeys.includes("agriculturalBusiness") && criterionKeys.includes("manufacturingBusiness"));
+    const fit = evaluate([{ key: "agriculturalBusiness", level: "Required" }], { agriculturalBusiness: "Yes" });
+    assert.equal(fit.checks[0].met, true);
+    const no = evaluate([{ key: "manufacturingBusiness", level: "Required" }], { manufacturingBusiness: "No" });
+    assert.equal(no.checks[0].met, false);
+  });
+
+  it("the admin reports count owners by gender", async () => {
+    const boss = await createStaff({ role: "super_admin" });
+    const { cookie } = await logIn(call, boss.email, boss.password);
+    const reports = await call("GET", "/api/admin/reports", { cookie });
+    assert.ok(Array.isArray(reports.json.byGender));
+    assert.ok(reports.json.byGender.some((r) => r.name === "Male" && r.count >= 1));
+    assert.ok(reports.json.byGender.some((r) => r.name === "Not set"));
   });
 });

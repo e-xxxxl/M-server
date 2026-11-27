@@ -26,6 +26,8 @@ export const criterionKinds = {
   womenOwned: { kind: "yes", label: "Women-owned business", read: (b) => b.womenOwned },
   youthOwned: { kind: "yes", label: "Youth-owned business", read: (b) => b.youthOwned },
   disabilityOwned: { kind: "yes", label: "Owned by a person with a disability", read: (b) => b.disabilityOwned },
+  agriculturalBusiness: { kind: "yes", label: "Agricultural business", read: (b) => b.agriculturalBusiness },
+  manufacturingBusiness: { kind: "yes", label: "Manufacturing business", read: (b) => b.manufacturingBusiness },
   exports: { kind: "yes", label: "Exports products or services", read: (b) => b.exports },
   verified: { kind: "verified", label: "Verified business", read: (b) => b.verificationStatus },
 };

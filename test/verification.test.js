@@ -292,10 +292,10 @@ describe("running a check", () => {
     assert.ok(!JSON.stringify(row).includes("PRIVATE") && !JSON.stringify(row).includes("private@x.com"));
   });
 
-  it("a struck-off company or a different registered name needs review", async () => {
+  it("an INACTIVE company still passes when the name matches, and a different registered name needs review", async () => {
     const o = await owner({ hasCac: "Yes", cacNumber: "RC1234567" });
     answer = () => hit({ company_name: "OBI FABRICS LIMITED", company_status: "Inactive" });
-    assert.equal((await run(o, { type: "cac" })).json.check.status, "Needs review");
+    assert.equal((await run(o, { type: "cac" })).json.check.status, "Passed");
     const p = await owner({ hasCac: "Yes", cacNumber: "RC7654321" });
     answer = () => hit({ company_name: "SOMETHING ELSE LTD", company_status: "Active" });
     assert.equal((await run(p, { type: "cac" })).json.check.status, "Needs review");
